@@ -7,7 +7,7 @@ import numpy as np
 def capture_image():
     # Save or return captured image for processing
     # Create a VideoCapture object
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
 
     # Check if camera opened successfully
     if not cap.isOpened():
