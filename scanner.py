@@ -1,4 +1,5 @@
 import cv2
+from camera_module import PiCameraCapture
 import pytesseract
 import imagehash
 from PIL import Image
@@ -6,42 +7,25 @@ import numpy as np
 
 def capture_image():
     # Save or return captured image for processing
-    # Create a VideoCapture object
-    cap = cv2.VideoCapture(1)
-
-    # Check if camera opened successfully
-    if not cap.isOpened():
-        print("Error: Could not open camera.")
-        exit()
+    cam = PiCameraCapture()
+    cam.start()
 
     while True:
-        # Capture frame-by-frame
-        ret, frame = cap.read()
+        frame = cam.capture_frame()
+        cv2.imshow("Pi Camera Feed", frame)
 
-        if not ret:
-            print("Error: Failed to capture frame.")
-            break
-
-        # Display the resulting frame
-        cv2.imshow('Camera Feed', frame)
-
-        # Wait for a key press
+        # Wait for Key to save or close image capture
         key = cv2.waitKey(1) & 0xFF
-
-        # Save image on 's' key press
         if key == ord('s'):
-            cv2.imwrite('captured_image.jpg', frame)
+            cv2.imwrite("captured_image.jpg", frame)
             print("Image saved as 'captured_image.jpg'")
-
-        # Exit on 'q' key press
-        if key == ord('q'):
+        elif key == ord('q'):
             break
 
     # Release the capture object and destroy all windows
-    cap.release()
+    cam.stop()
     cv2.destroyAllWindows()
-    pass
-
+    
 def extract_text(image):
     # Preprocess image (grayscale, threshold, etc.)
     # Run Tesseract OCR
