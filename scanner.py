@@ -1,12 +1,11 @@
 import cv2
 import pytesseract
 import imagehash
-from PIL import image
+from PIL import Image
 import numpy as np
 
 def capture_image():
-    # Use PiCamera or OpenCV to capture image
-    # Save or return image for processing
+    # Save or return captured image for processing
     # Create a VideoCapture object
     cap = cv2.VideoCapture(0)
 
