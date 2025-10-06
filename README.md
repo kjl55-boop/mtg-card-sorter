@@ -25,3 +25,10 @@ A modular Magic: The Gathering card sorting system using Raspberry Pi 5, Pi Came
 - [x] I2C communication
 - [ ] Foil detection
 - [ ] Bin feedback loop
+
+
+## Generate / Access VM on DEV PC
+python -m venv venv
+source venv/bin/activate  # or .\venv\Scripts\activate on Windows
+pip install numpy opencv-python pytesseract imagehash pillow smbus2
+pip freeze > requirements.txt
