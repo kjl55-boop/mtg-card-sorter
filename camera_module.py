@@ -8,7 +8,7 @@ import cv2
 import time
 
 class PiCameraCapture:
-    def __init__(self, resolution=(640, 480), warmup_time=2):
+    def __init__(self, resolution, warmup_time=2):
         self.picam2 = Picamera2()
         self.picam2.preview_configuration.main.size = resolution
         self.picam2.preview_configuration.main.format = "RGB888"
