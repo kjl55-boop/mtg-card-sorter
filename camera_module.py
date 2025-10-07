@@ -19,7 +19,7 @@ class PiCameraCapture:
         elif mode == "scan":
             self.picam2.configure(self.picam2.create_still_configuration(
                 main={"size": (4608, 2592), "format": "RGB888"},
-                display="off"
+                #display="off"
             ))
 
         # 🔧 Set image quality controls here
@@ -41,9 +41,31 @@ class PiCameraCapture:
     def stop(self):
         self.picam2.stop()
 
+
 '''
+from picamera2 import Picamera2
+import cv2
+import time
+
+class PiCameraCapture:
+    def __init__(self, resolution=(4608, 2592), warmup_time=2):
+        self.picam2 = Picamera2()
+        self.picam2.configure(self.picam2.create_still_configuration(
+            main={"size": resolution, "format": "RGB888"},
+            display="off"  # disables preview scaling
+        ))
+
+        self.warmup_time = warmup_time
+
+    def start(self):
+        self.picam2.start()
+        time.sleep(self.warmup_time)
+
     def capture_frame(self):
         frame = self.picam2.capture_array()
         resized = cv2.resize(frame, (960, 540), interpolation=cv2.INTER_AREA)
         return resized
+
+    def stop(self):
+        self.picam2.stop()
 '''
