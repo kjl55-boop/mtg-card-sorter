@@ -7,11 +7,11 @@ import numpy as np
 
 def capture_image():
     # Save or return captured image for processing
-    cam = PiCameraCapture(mode="scan")
+    cam = PiCameraCapture()
     cam.start()
 
     while True:
-        frame = cam.capture_frame(scale=.25)
+        frame = cam.capture_frame()
         cv2.imshow("Pi Camera Feed", frame)
         # Wait for Key to save or close image capture
         key = cv2.waitKey(1) & 0xFF
