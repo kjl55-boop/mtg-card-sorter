@@ -102,6 +102,8 @@ def main():
 
             frame_bgr = frame[:, :, ::-1]  # RGB to BGR
 
+            mode_text = "MANUAL AE" if manual_ae else "AUTO AE"
+
             try:
                 h, w = frame_bgr.shape[:2]
                 target_w, target_h = 1280, 720
@@ -127,6 +129,7 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
 
             cv2.imshow(WINDOW_NAME, frame_disp)
+
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
