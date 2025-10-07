@@ -11,7 +11,7 @@ def capture_image():
     cam.start()
 
     while True:
-        frame = cam.capture_matching_jpeg()#cam.capture_frame()
+        frame = cam.capture_match()#cam.capture_frame()
         cv2.imshow("Pi Camera Feed", frame)
         # Wait for Key to save or close image capture
         key = cv2.waitKey(1) & 0xFF
