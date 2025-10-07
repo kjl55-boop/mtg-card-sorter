@@ -128,7 +128,6 @@ def main():
             cv2.putText(frame_disp, "q=quit  s=save libcamera JPEG  m=toggle AE", (10, frame_disp.shape[0]-10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
 
-            cv2.imshow(WINDOW_NAME, frame_disp)
 
 
             key = cv2.waitKey(1) & 0xFF
