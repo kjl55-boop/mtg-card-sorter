@@ -30,73 +30,14 @@ class PiCameraCapture:
         self.picam2.start()
         time.sleep(self.warmup_time)  # Standard warmup for AE/AWB
 
-    def capture_match(self, filename="capture.jpg", exposure_us=None, 
-                     analogue_gain=None, extra_wait=0.3, return_exif=False):
-        if exposure_us is not None and analogue_gain is not None:
-            self.picam2.set_controls({
-                "AeEnable": False,
-                "ExposureTime": int(exposure_us),
-                "AnalogueGain": float(analogue_gain)
-            })
-            time.sleep(0.1)
-        else:
-            # Ensure auto exposure is enabled
-            self.picam2.set_controls({"AeEnable": True})
-
+    def capture_match(self, filename="capture.jpg", extra_wait=0.3, return_exif=False):
+        self.picam2.set_controls({"AeEnable": True})
         time.sleep(extra_wait)
         self.picam2.capture_file(filename)
         exif = read_exif(filename)
         img = cv2.imread(filename)
         return (img, exif) if return_exif else img
 
-    def stop(self):
-        self.picam2.stop()
-
-'''
-from picamera2 import Picamera2
-import cv2
-import time
-
-class PiCameraCapture:
-    def __init__(self, mode="scan", warmup_time=2):
-        self.picam2 = Picamera2()
-        self.warmup_time = warmup_time
-
-        if mode == "preview":
-            self.picam2.configure(self.picam2.create_preview_configuration(
-                main={"size": (1280, 720), "format": "RGB888"}
-            ))
-        elif mode == "scan":
-            self.picam2.configure(self.picam2.create_still_configuration(
-                main={"size": (4608, 2592), "format": "RGB888"},
-                raw={"size": (4608, 2592)}  # Enables full-res raw stream
-
-            ))
-
-        # 🔧 Set image quality controls here
-        self.picam2.set_controls({
-            "Sharpness": 1.0,
-            "Contrast": 1.0,
-            "Saturation": 1.0,
-            "NoiseReductionMode": 2,  # High quality
-            #"AwbMode": 1              # Auto white balance
-        })
-
-    def start(self):
-        self.picam2.start()
-        time.sleep(self.warmup_time)
-
-    def capture_frame(self, scale=None):
-        #Modular scaling of frame
-        self.picam2.capture_file("temp.jpg")
-        frame = cv2.imread("temp.jpg")
-        if scale:
-            w = int(frame.shape[1] * scale)
-            h = int(frame.shape[0] * scale)
-            frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
-        return frame
-
 
     def stop(self):
         self.picam2.stop()
-'''
