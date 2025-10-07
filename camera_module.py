@@ -52,7 +52,7 @@ class PiCameraCapture:
         self.picam2.capture_file(filename)
         exif = read_exif(filename)
         img = cv2.imread(filename)  # BGR
-        return img, exif
+        return img#, exif
 
     def stop(self):
         self.picam2.stop()
