@@ -29,7 +29,7 @@ class PiCameraCapture:
             "Contrast": 1.0,
             "Saturation": 1.0,
             "NoiseReductionMode": 2,  # High quality
-            "AwbMode": 1              # Auto white balance
+            #"AwbMode": 1              # Auto white balance
         })
 
     def start(self):
