@@ -6,23 +6,22 @@
 from picamera2 import Picamera2
 import time
 import cv2
+from PIL import Image
+from PIL.ExifTags import TAGS
+
+def read_exif(path):
+    img = Image.open(path)
+    exif = img._getexif() or {}
+    return {TAGS.get(k,k): v for k,v in exif.items()}
 
 class PiCameraCapture:
-    def __init__(self, mode="scan", warmup_time=2):
+    def __init__(self, warmup_time=2):
         self.picam2 = Picamera2()
         self.warmup_time = warmup_time
-
-        if mode == "preview":
-            self.picam2.configure(self.picam2.create_preview_configuration(
-                main={"size": (1280, 720), "format": "RGB888"}
-            ))
-        else:  # scan, full-res still
-            self.picam2.configure(self.picam2.create_still_configuration(
-                main={"size": (4608, 2592), "format": "RGB888"},
-                raw={"size": (4608, 2592)}
-            ))
-
-        # quality tuning
+        self.picam2.configure(self.picam2.create_still_configuration(
+            main={"size": (4608, 2592), "format": "RGB888"},
+            raw={"size": (4608, 2592)}
+        ))
         self.picam2.set_controls({
             "NoiseReductionMode": 2,
             "Sharpness": 1.0,
@@ -33,32 +32,27 @@ class PiCameraCapture:
 
     def start(self):
         self.picam2.start()
-        # give AE/AGC and AWB extra time to converge
-        time.sleep(self.warmup_time + 1.0)
+        time.sleep(self.warmup_time + 1.0)  # give AE/AWB extra time
 
-    def capture_matching_jpeg(self, filename="capture.jpg",
-                              exposure_us=58823, analogue_gain=4.0,
-                              use_manual=False, extra_wait=0.2):
-        # If use_manual False, let libcamera AE pick settings similar to rpicam-still
-        if use_manual:
-            # disable AE and set exposure/gain to match EXIF (1/17s and ISO~400)
+    def capture_match(self, filename="capture.jpg", exposure_us=None, analogue_gain=None, extra_wait=0.3):
+        if exposure_us is not None and analogue_gain is not None:
+            # switch to manual exposure/gain
             self.picam2.set_controls({
                 "AeEnable": False,
                 "ExposureTime": int(exposure_us),
                 "AnalogueGain": float(analogue_gain)
             })
-            time.sleep(0.1)  # let hardware apply controls
-
-        time.sleep(extra_wait)
-        self.picam2.capture_file(filename)   # produces ISP-processed JPEG with EXIF
-
-        if use_manual:
-            # restore AE
+            time.sleep(0.1)
+        else:
+            # ensure AE is enabled for libcamera auto selection
             self.picam2.set_controls({"AeEnable": True})
 
-        # read processed image with OpenCV (BGR)
-        img = cv2.imread(filename)
-        return img
+        time.sleep(extra_wait)
+        # capture_file ensures libcamera ISP + JPEG + EXIF
+        self.picam2.capture_file(filename)
+        exif = read_exif(filename)
+        img = cv2.imread(filename)  # BGR
+        return img, exif
 
     def stop(self):
         self.picam2.stop()
