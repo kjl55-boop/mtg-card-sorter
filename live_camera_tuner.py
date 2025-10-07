@@ -122,13 +122,6 @@ def main():
             except Exception as e:
                 print("Display error:", e)
 
-            # Overlay current mode and brief instructions
-            mode_text = "MANUAL AE" if manual_ae else "AUTO AE"
-            cv2.putText(frame_disp, mode_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,255,0), 2)
-            cv2.putText(frame_disp, "q=quit  s=save libcamera JPEG  m=toggle AE", (10, frame_disp.shape[0]-10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
-
-
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
