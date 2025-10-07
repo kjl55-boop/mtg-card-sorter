@@ -97,17 +97,28 @@ def main():
 
             # Capture a frame for live preview (fast path)
             frame = picam2.capture_array()
-            # convert RGB to BGR for OpenCV display
-            frame_bgr = frame[:, :, ::-1]
+            if frame is None or frame.shape[0] == 0:
+                continue  # skip this frame
 
-            # Downscale for a reasonable window size if needed
-            h, w = frame_bgr.shape[:2]
-            target_w, target_h = 1280, 720
-            if w > target_w:
-                scale = target_w / w
-                frame_disp = cv2.resize(frame_bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-            else:
-                frame_disp = frame_bgr
+            frame_bgr = frame[:, :, ::-1]  # RGB to BGR
+
+            try:
+                h, w = frame_bgr.shape[:2]
+                target_w, target_h = 1280, 720
+                if w > target_w:
+                    scale = target_w / w
+                    frame_disp = cv2.resize(frame_bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+                else:
+                    frame_disp = frame_bgr
+
+                # Safe overlay
+                cv2.putText(frame_disp, mode_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,255,0), 2)
+                cv2.putText(frame_disp, "q=quit  s=save libcamera JPEG  m=toggle AE", (10, frame_disp.shape[0]-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
+
+                cv2.imshow(WINDOW_NAME, frame_disp)
+            except Exception as e:
+                print("Display error:", e)
 
             # Overlay current mode and brief instructions
             mode_text = "MANUAL AE" if manual_ae else "AUTO AE"
