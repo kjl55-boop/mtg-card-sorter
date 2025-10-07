@@ -34,7 +34,7 @@ class PiCameraCapture:
         self.picam2.start()
         time.sleep(self.warmup_time + 1.0)  # give AE/AWB extra time
 
-    def capture_match(self, filename="capture.jpg", exposure_us=None, analogue_gain=None, extra_wait=0.3):
+    def capture_match(self, filename="capture.jpg", exposure_us=None, analogue_gain=None, extra_wait=0.3, return_exif=False):
         if exposure_us is not None and analogue_gain is not None:
             # switch to manual exposure/gain
             self.picam2.set_controls({
@@ -52,7 +52,8 @@ class PiCameraCapture:
         self.picam2.capture_file(filename)
         exif = read_exif(filename)
         img = cv2.imread(filename)  # BGR
-        return img#, exif
+        return (img, exif) if return_exif else img
+
 
     def stop(self):
         self.picam2.stop()
