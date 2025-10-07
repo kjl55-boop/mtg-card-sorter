@@ -52,8 +52,9 @@ def read_trackbar_values():
 def main():
     picam2 = Picamera2()
     # preview configuration for interactive tuning (lower size for speed)
-    picam2.configure(picam2.create_preview_configuration(
-        main={"size": (1280, 720), "format": "RGB888"}
+    picam2.configure(picam2.create_still_configuration(
+        main={"size": (1280, 720), "format": "RGB888"},
+        raw={"size": (1280, 720)}
     ))
 
     create_trackbars()
@@ -102,6 +103,7 @@ def main():
             # Capture a frame for live preview (fast path)
             frame = picam2.capture_array()
             if frame is None or frame.shape[0] == 0:
+                print("Invalid frame, skipping...")
                 continue  # skip this frame
 
             frame_bgr = frame[:, :, ::-1]  # RGB to BGR
@@ -118,6 +120,7 @@ def main():
                     frame_disp = frame_bgr
 
                 # Safe overlay
+                frame_disp = frame[:, :, ::-1].copy()  # RGB to BGR and make it writable
                 cv2.putText(frame_disp, mode_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,255,0), 2)
                 cv2.putText(frame_disp, "q=quit  s=save libcamera JPEG  m=toggle AE", (10, frame_disp.shape[0]-10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
