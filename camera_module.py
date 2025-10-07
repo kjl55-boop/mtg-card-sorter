@@ -10,6 +10,7 @@ import time
 import cv2
 from PIL import Image
 from PIL.ExifTags import TAGS
+import subprocess
 
 def read_exif(path):
     img = Image.open(path)

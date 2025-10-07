@@ -4,14 +4,23 @@ import pytesseract
 import imagehash
 from PIL import Image
 import numpy as np
+import subprocess
+import time
+
+
+def capture_with_rpicam_still(filename="capture.jpg"):
+    subprocess.run(["rpicam-still", "-o", filename], check=True)
+    time.sleep(0.05)
+    img = cv2.imread(filename)  # BGR, ready for processing
+    return img
 
 def capture_image():
     # Save or return captured image for processing
-    cam = PiCameraCapture()
-    cam.start()
+    #cam = PiCameraCapture()
+    #cam.start()
 
     while True:
-        frame = cam.capture_match()#cam.capture_frame()
+        frame = capture_with_rpicam_still() #cam.capture_match()
         cv2.namedWindow("Feed", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("Feed", 1280, 720)
         cv2.imshow("Feed", frame)
