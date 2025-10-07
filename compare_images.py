@@ -22,7 +22,7 @@ def stats(path):
         "lap_var": float(lap)
     }
 
-for p in ("rpicam.jpg","code.jpg"):
+for p in ("image.jpg","capture.jpg"):
     print("\n---", p)
     print("EXIF:", read_exif(p))
     print("Stats:", stats(p))
