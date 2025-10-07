@@ -11,7 +11,7 @@ class PiCameraCapture:
     def __init__(self, resolution=(4608, 2592), warmup_time=2):
         self.picam2 = Picamera2()
         self.picam2.configure(self.picam2.create_still_configuration(
-            main={"size": resolution, "format": "RGB888"}
+            main={"size": (1280,720), "format": "RGB888"}
         ))
         self.warmup_time = warmup_time
 
