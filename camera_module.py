@@ -18,25 +18,21 @@ class PiCameraCapture:
     def __init__(self, warmup_time=2):
         self.picam2 = Picamera2()
         self.warmup_time = warmup_time
-        self.picam2.configure(self.picam2.create_still_configuration(
-            main={"size": (4608, 2592), "format": "RGB888"},
-            raw={"size": (4608, 2592)}
-        ))
-        self.picam2.set_controls({
-            "NoiseReductionMode": 2,
-            "Sharpness": 1.0,
-            "Contrast": 1.0,
-            "Saturation": 1.0,
-            "AwbMode": 1
-        })
+        
+        # Use default still configuration - matches rpicam-still defaults
+        config = self.picam2.create_still_configuration()
+        self.picam2.configure(config)
+        
+        # Don't set any controls - let the camera use its defaults
+        # rpicam-still doesn't set these, so neither should we
 
     def start(self):
         self.picam2.start()
-        time.sleep(self.warmup_time + 1.0)  # give AE/AWB extra time
+        time.sleep(self.warmup_time)  # Standard warmup for AE/AWB
 
-    def capture_match(self, filename="capture.jpg", exposure_us=None, analogue_gain=None, extra_wait=0.3,return_exif=False):
+    def capture_match(self, filename="capture.jpg", exposure_us=None, 
+                     analogue_gain=None, extra_wait=0.3, return_exif=False):
         if exposure_us is not None and analogue_gain is not None:
-            # switch to manual exposure/gain
             self.picam2.set_controls({
                 "AeEnable": False,
                 "ExposureTime": int(exposure_us),
@@ -44,16 +40,14 @@ class PiCameraCapture:
             })
             time.sleep(0.1)
         else:
-            # ensure AE is enabled for libcamera auto selection
+            # Ensure auto exposure is enabled
             self.picam2.set_controls({"AeEnable": True})
 
         time.sleep(extra_wait)
-        # capture_file ensures libcamera ISP + JPEG + EXIF
         self.picam2.capture_file(filename)
         exif = read_exif(filename)
-        img = cv2.imread(filename)  # BGR
+        img = cv2.imread(filename)
         return (img, exif) if return_exif else img
-
 
     def stop(self):
         self.picam2.stop()
