@@ -1,4 +1,7 @@
-from scanner import capture_image
+from scanner import *
 
-capture_image()
+
+
+
+print(extract_text(capture_image()))
 

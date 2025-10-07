@@ -34,6 +34,7 @@ def capture_image():
 
     # Release the capture object and destroy all windows
     #cam.stop()
+    return frame
     cv2.destroyAllWindows()
 
 def extract_text(image):
