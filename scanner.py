@@ -19,11 +19,11 @@ def capture_image():
     #cam = PiCameraCapture()
     #cam.start()
 
+    frame = capture_with_rpicam_still() #cam.capture_match()
+    cv2.namedWindow("Feed", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Feed", 1280, 720)
+    cv2.imshow("Feed", frame)
     while True:
-        frame = capture_with_rpicam_still() #cam.capture_match()
-        cv2.namedWindow("Feed", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("Feed", 1280, 720)
-        cv2.imshow("Feed", frame)
         # Wait for Key to save or close image capture
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s'):
@@ -33,7 +33,7 @@ def capture_image():
             break
 
     # Release the capture object and destroy all windows
-    cam.stop()
+    #cam.stop()
     cv2.destroyAllWindows()
 
 def extract_text(image):
