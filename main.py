@@ -1,7 +1,7 @@
 from scanner import *
 
 
-test = preprocess_for_ocr(capture_image())
+test = show_pipeline_grid_with_ocr(capture_image())
 
 #print(extract_text(test))
 
