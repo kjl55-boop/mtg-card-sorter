@@ -4,6 +4,7 @@
 # So OpenCV can’t “see” it unless you manually enable V4L2 support or use a workaround.
 
 # camera_module_picamera_highq.py
+# camera_module_picamera_preserve.py
 from picamera2 import Picamera2
 import time
 import cv2
@@ -19,30 +20,28 @@ class PiCameraCapture:
     def __init__(self, warmup_time=3.0):
         self.picam2 = Picamera2()
         self.warmup_time = warmup_time
-        # explicit still pipeline at full sensor res and RGB output
         cfg = self.picam2.create_still_configuration(main={"size": (4608,2592), "format":"RGB888"})
         self.picam2.configure(cfg)
 
     def start(self):
         self.picam2.start()
-        time.sleep(self.warmup_time)  # give AE/AWB/ISP time to settle
+        time.sleep(self.warmup_time)
 
-    def capture_match(self, filename="capture.jpg", extra_wait=0.6, jpeg_quality=95, return_exif=False):
-        # Ensure AE/AWB are active and settled
+    def capture_match(self, filename="capture.jpg", extra_wait=0.8, return_exif=False):
+        # Ensure AE/AWB engaged and allowed to settle
         self.picam2.set_controls({"AeEnable": True})
         time.sleep(extra_wait)
 
-        # 1) capture file (Picamera2 encoder)
+        # Let Picamera2 write its JPEG with its encoder and EXIF
         self.picam2.capture_file(filename)
 
-        # 2) re-open and re-encode with high JPEG quality to avoid aggressive encoder defaults
-        img = cv2.imread(filename)  # BGR
-        if img is not None:
-            rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            pil = Image.fromarray(rgb)
-            pil.save(filename, "JPEG", quality=jpeg_quality, optimize=True)
+        # Read EXIF from the saved JPEG (should be present)
+        try:
+            exif = read_exif(filename)
+        except Exception:
+            exif = {}
 
-        exif = read_exif(filename)
+        # Read JPEG with OpenCV for processing (BGR)
         img = cv2.imread(filename)
         return (img, exif) if return_exif else img
 
