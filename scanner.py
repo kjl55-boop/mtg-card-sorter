@@ -20,10 +20,10 @@ def capture_image():
     #cam.start()
 
     frame = capture_with_rpicam_still() #cam.capture_match()
-    cv2.namedWindow("Feed", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Feed", 1280, 720)
-    cv2.imshow("Feed", frame)
     while True:
+        cv2.namedWindow("Feed", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("Feed", 1280, 720)
+        cv2.imshow("Feed", frame)
         # Wait for Key to save or close image capture
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s'):
@@ -31,11 +31,14 @@ def capture_image():
             print("Image saved as 'captured_image.jpg'")
         elif key == ord('q'):
             break
+        elif key == ord('r'):
+            cv2.destroyAllWindows()
+            frame = capture_with_rpicam_still()
 
     # Release the capture object and destroy all windows
     #cam.stop()
-    return frame
     cv2.destroyAllWindows()
+    return frame
 
 def extract_text(image):
     # Preprocess image (grayscale, threshold, etc.)
