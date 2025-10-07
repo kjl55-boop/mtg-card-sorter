@@ -21,7 +21,8 @@ class PiCameraCapture:
 
     def capture_frame(self):
         frame = self.picam2.capture_array()
-        return frame
+        resized = cv2.resize(frame, (960, 540), interpolation=cv2.INTER_AREA)
+        return resized
 
     def stop(self):
         self.picam2.stop()
