@@ -7,7 +7,7 @@ import numpy as np
 
 def capture_image():
     # Save or return captured image for processing
-    cam = PiCameraCapture()
+    cam = PiCameraCapture(mode="scan")
     cam.start()
 
     while True:
