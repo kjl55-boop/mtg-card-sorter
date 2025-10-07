@@ -12,14 +12,12 @@ def capture_image():
 
     while True:
         frame = cam.capture_frame()
-        frame = self.picam2.capture_array()
-        resized = cv2.resize(frame, (960, 540), interpolation=cv2.INTER_AREA)
-        cv2.imshow("Pi Camera Feed", resized)
+        cv2.imshow("Pi Camera Feed", frame)
 
         # Wait for Key to save or close image capture
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s'):
-            cv2.imwrite("captured_image.jpg", resized)
+            cv2.imwrite("captured_image.jpg", frame)
             print("Image saved as 'captured_image.jpg'")
         elif key == ord('q'):
             break
