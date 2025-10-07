@@ -57,6 +57,10 @@ def main():
     ))
 
     create_trackbars()
+
+    cv2.setTrackbarPos("Exposure ms", WINDOW_NAME, 50)       # 50 ms = 1/20 s
+    cv2.setTrackbarPos("Analogue gain x100", WINDOW_NAME, 400)  # gain = 4.0
+
     picam2.start()
     time.sleep(1.0)  # let AE/AGC settle a bit
 
@@ -122,6 +126,7 @@ def main():
             except Exception as e:
                 print("Display error:", e)
 
+            print("Frame min/max:", np.min(frame), np.max(frame))
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
@@ -130,6 +135,10 @@ def main():
                 manual_ae = not manual_ae
                 # small delay to let setting take effect
                 time.sleep(0.05)
+            elif key == ord('r'):
+                cv2.setTrackbarPos("Exposure ms", WINDOW_NAME, 50)
+                cv2.setTrackbarPos("Analogue gain x100", WINDOW_NAME, 400)
+                print("Reset sliders to safe defaults")
             elif key == ord('s'):
                 # Capture a processed JPEG with current controls applied by libcamera
                 fname = f"capture_{int(time.time())}.jpg"
