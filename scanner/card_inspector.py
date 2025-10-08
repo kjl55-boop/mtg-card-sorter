@@ -41,6 +41,11 @@ def crop_rotated_box(frame, box):
     if angle < -45:
         angle += 90
 
+    # Optional: force portrait orientation
+    if size[0] > size[1]:
+        size = (size[1], size[0])
+        angle += 90
+
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
     rotated = cv2.warpAffine(frame, M, frame.shape[1::-1], flags=cv2.INTER_CUBIC)
 
@@ -48,6 +53,7 @@ def crop_rotated_box(frame, box):
     x, y = int(center[0] - w / 2), int(center[1] - h / 2)
     cropped = rotated[y:y + h, x:x + w]
     return cropped
+
 
 
 
