@@ -156,6 +156,8 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
                 snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
                 for label, snippet in snippets:
                     gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
+                    gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
+                    gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
                     text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
                     f.write(f"{label}:\n{text}\n\n")
 
