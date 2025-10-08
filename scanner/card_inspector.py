@@ -6,7 +6,7 @@ from picamera2 import Picamera2
 import numpy as np
 from libcamera import controls
 
-def get_rotated_card_bounds(frame, scale=1.0):
+def get_rotated_card_bounds(frame, scale_x=1.0, scale_y=1.0):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 50, 150)
@@ -22,9 +22,16 @@ def get_rotated_card_bounds(frame, scale=1.0):
     box = box.astype(np.intp)
 
     center = np.mean(box, axis=0)
-    scaled_box = np.array([center + scale * (pt - center) for pt in box], dtype=np.int32)
+    scaled_box = np.array([
+        [
+            center[0] + scale_x * (pt[0] - center[0]),
+            center[1] + scale_y * (pt[1] - center[1])
+        ]
+        for pt in box
+    ], dtype=np.int32)
 
     return scaled_box, card_contour
+
 
 def crop_rotated_box(frame, box):
     rect = cv2.minAreaRect(box.astype(np.float32))
@@ -81,6 +88,8 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.start()
 
     cv2.namedWindow("Live Feed")
+    cv2.createTrackbar("Scale X %", "Live Feed", 100, 200, lambda x: None)
+    cv2.createTrackbar("Scale Y %", "Live Feed", 100, 200, lambda x: None)
     cv2.createTrackbar("Box Scale %", "Live Feed", 100, 150, lambda x: None)
     cv2.createTrackbar("Top %", "Live Feed", 20, 100, lambda x: None)
     cv2.createTrackbar("Mid Start %", "Live Feed", 35, 100, lambda x: None)
@@ -91,13 +100,15 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         frame = picam.capture_array()
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-        scale = cv2.getTrackbarPos("Box Scale %", "Live Feed") / 100.0
-        box, contour = get_rotated_card_bounds(frame, scale)
+        scale_x = cv2.getTrackbarPos("Scale X %", "Live Feed") / 100.0
+        scale_y = cv2.getTrackbarPos("Scale Y %", "Live Feed") / 100.0
+        box, contour = get_rotated_card_bounds(frame, scale_x, scale_y)
+
 
         if box is not None:
             cv2.drawContours(frame, [box], -1, (0, 0, 255), 4)
 
-        scaled = cv2.resize(frame, (0, 0), fx=0.6, fy=0.6)
+        scaled = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
         cv2.imshow("Live Feed", scaled)
 
         key = cv2.waitKey(1) & 0xFF
