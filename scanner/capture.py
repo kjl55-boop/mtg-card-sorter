@@ -6,6 +6,7 @@ import subprocess
 import time
 import cv2
 from typing import Tuple, Dict
+import numpy as np
 
 def capture_with_rpicam_still(filename: str = "capture.jpg") -> 'np.ndarray':
     """
