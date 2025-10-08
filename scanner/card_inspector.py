@@ -4,50 +4,52 @@ import time
 from pathlib import Path
 from picamera2 import Picamera2
 import numpy as np
+from libcamera import controls
 
-drawing = False
-selected_roi = None
-start_point = (0, 0)
+def auto_detect_card(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 50, 150)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-def mouse_callback(event, x, y, flags, param):
-    global drawing, start_point, selected_roi
-    if event == cv2.EVENT_LBUTTONDOWN:
-        drawing = True
-        start_point = (x, y)
-    elif event == cv2.EVENT_MOUSEMOVE and drawing:
-        selected_roi = (start_point[0], start_point[1], x, y)
-    elif event == cv2.EVENT_LBUTTONUP:
-        drawing = False
-        selected_roi = (start_point[0], start_point[1], x, y)
+    # Filter contours by area
+    contours = [c for c in contours if cv2.contourArea(c) > 10000]
+    if not contours:
+        return None
+
+    card_contour = max(contours, key=cv2.contourArea)
+    x, y, w, h = cv2.boundingRect(card_contour)
+    return frame[y:y+h, x:x+w]
 
 def rotate_ccw_90(image):
     return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-def extract_snippets(card_img):
+def extract_snippets(card_img, regions=None):
     h, w = card_img.shape[:2]
     snippets = []
 
-    # Example: top line
-    top_line = card_img[0:int(0.12*h), :]
-    snippets.append(("Top Line", top_line))
+    # Default regions if none provided
+    if regions is None:
+        regions = {
+            "Top": (0.00, 0.25),
+            "Middle": (0.35, 0.65),
+            "Bottom": (0.75, 1.00)
+        }
 
-    # Example: bottom right corner
-    corner = card_img[int(0.85*h):, int(0.7*w):]
-    snippets.append(("Bottom Right", corner))
+    for label, (start, end) in regions.items():
+        y1 = int(start * h)
+        y2 = int(end * h)
+        snippet = card_img[y1:y2, :]
+        snippets.append((label, snippet))
 
-    # Add more regions as needed
     return snippets
 
 def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7"):
-    global selected_roi
     Path(debug_dir).mkdir(parents=True, exist_ok=True)
 
     picam = Picamera2()
-    from libcamera import controls
-    config = picam.create_preview_configuration(main={"size": (2304, 1296)})
+    config = picam.create_preview_configuration(main={"size": (1280, 720)})
     picam.configure(config)
-    picam.start()
-
     picam.set_controls({
         "AfMode": controls.AfModeEnum.Continuous,
         "AwbEnable": True,
@@ -56,49 +58,35 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         "Contrast": 1.5,
         "Saturation": 1.5
     })
-
-    cv2.namedWindow("Live Feed")
-    cv2.setMouseCallback("Live Feed", mouse_callback)
+    picam.start()
 
     while True:
         frame = picam.capture_array()
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        display = frame.copy()
+        card = auto_detect_card(frame)
 
-        if selected_roi:
-            x1, y1, x2, y2 = selected_roi
-            x1, x2 = sorted([x1, x2])
-            y1, y2 = sorted([y1, y2])
-            cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-            card = frame[y1:y2, x1:x2]
+        if card is not None:
             rotated = rotate_ccw_90(card)
-            snippets = extract_snippets(rotated)
+            cv2.imshow("Card", rotated)
 
-            for i, (label, snippet) in enumerate(snippets):
+            snippets = extract_snippets(rotated)
+            for label, snippet in snippets:
+                cv2.imshow(label, snippet)
                 gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
                 text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
-                cv2.putText(display, f"{label}: {text[:30]}", (10, 30 + i*25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                print(f"{label} OCR:\n{text}\n")
 
-        scale = 0.6
-        resized = cv2.resize(display, (0, 0), fx=scale, fy=scale)
-        cv2.imshow("Live Feed", resized)
+        scaled = cv2.resize(frame, (0, 0), fx=0.6, fy=0.6)
+        cv2.imshow("Live Feed", scaled)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break
-        elif key == ord('r'):
-            selected_roi = None
-        elif key == ord('s') and selected_roi:
+        elif key == ord('s') and card is not None:
             ts = int(time.time())
-            x1, y1, x2, y2 = selected_roi
-            x1, x2 = sorted([x1, x2])
-            y1, y2 = sorted([y1, y2])
-            card = frame[y1:y2, x1:x2]
-            rotated = rotate_ccw_90(card)
-            cv2.imwrite(str(Path(debug_dir) / f"{ts}_card_rotated.png"), rotated)
+            cv2.imwrite(str(Path(debug_dir) / f"{ts}_card.png"), rotated)
             with open(Path(debug_dir) / f"{ts}_ocr.txt", "w") as f:
-                for label, snippet in extract_snippets(rotated):
+                for label, snippet in snippets:
                     gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
                     text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
                     f.write(f"{label}:\n{text}\n\n")
