@@ -19,6 +19,37 @@ def stack_images_grid(scale, img_matrix, labels=None, ocr_texts=None):
 
     # Resize and label each image
     labeled_rows = []
+    target_size = None  # will be set after first image
+
+    for r in range(rows):
+        row_imgs = []
+        for c in range(cols):
+            img = img_matrix[r][c]
+            if img is None:
+                img = np.zeros((100, 100, 3), dtype=np.uint8)  # fallback
+
+            # Convert grayscale to BGR
+            if img.ndim == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+            # Resize to scale
+            img = cv2.resize(img, (0, 0), fx=scale, fy=scale)
+
+            # Set target size from first image
+            if target_size is None:
+                target_size = img.shape[:2]  # (height, width)
+
+            # Resize to match target size
+            img = cv2.resize(img, (target_size[1], target_size[0]))
+
+            # Add label if available
+            label = labels[r][c] if labels else ""
+            if label:
+                cv2.putText(img, label, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+            row_imgs.append(img)
+        labeled_rows.append(row_imgs)
+    '''labeled_rows = []
     for r in range(rows):
         row_imgs = []
         for c in range(cols):
@@ -34,7 +65,7 @@ def stack_images_grid(scale, img_matrix, labels=None, ocr_texts=None):
                 cv2.putText(img, label, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
             row_imgs.append(img)
-        labeled_rows.append(row_imgs)
+        labeled_rows.append(row_imgs)'''
 
     # Overlay OCR text
     if ocr_texts:
