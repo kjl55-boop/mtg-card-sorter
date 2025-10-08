@@ -7,6 +7,16 @@ import numpy as np
 from libcamera import controls
 
 def auto_detect_card(frame):
+    bounds = get_card_bounds(frame)
+    if bounds is None:
+        return None
+    x, y, w, h = bounds
+    return frame[y:y+h, x:x+w]
+
+def rotate_ccw_90(image):
+    return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+def get_card_bounds(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 50, 150)
@@ -25,10 +35,7 @@ def auto_detect_card(frame):
     w = min(w + 2 * pad, frame.shape[1] - x)
     h = min(h + 2 * pad, frame.shape[0] - y)
 
-    return frame[y:y+h, x:x+w]
-
-def rotate_ccw_90(image):
-    return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return x, y, w, h
 
 def extract_snippets(card_img, top_pct, mid_start_pct, mid_end_pct, bot_pct):
     h, w = card_img.shape[:2]
@@ -70,6 +77,9 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         frame = picam.capture_array()
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         card = auto_detect_card(frame)
+        if card is not None:
+            x, y, w, h = get_card_bounds(frame)  # new helper
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
 
         if card is not None:
             rotated = rotate_ccw_90(card)
@@ -104,5 +114,16 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
                     gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
                     text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
                     f.write(f"{label}:\n{text}\n\n")
+        elif key == ord('c') and card is not None:
+            confirmed_card = card.copy()
+            confirmed_rotated = rotate_ccw_90(confirmed_card)
+            snippets = extract_snippets(confirmed_rotated, top_pct, mid_start_pct, mid_end_pct, bot_pct)
+
+            for label, snippet in snippets:
+                cv2.imshow(f"Confirmed {label}", snippet)
+                gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
+                text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
+                print(f"[Confirmed] {label} OCR:\n{text}\n")
+
 
     cv2.destroyAllWindows()
