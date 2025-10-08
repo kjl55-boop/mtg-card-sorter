@@ -82,10 +82,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.configure(config)
     picam.set_controls({
         "AfMode": controls.AfModeEnum.Continuous,
-        #"AwbEnable": True,
-        "ColourGains": (1.8, 1.2),  # Adjust these based on your lighting
-        "ExposureTime": 10000,      # Microseconds; tune for brightness
-        "AnalogueGain": 1.0,
+        "AwbEnable": True,
         "NoiseReductionMode": controls.draft.NoiseReductionModeEnum.HighQuality,
         "Sharpness": 2.0,
         "Contrast": 1.5,
@@ -94,8 +91,6 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.start()
 
     cv2.namedWindow("Controls")
-    cv2.createTrackbar("Brightness", "Controls", 100, 200, lambda x: None)
-    cv2.createTrackbar("Contrast", "Controls", 100, 300, lambda x: None)
     cv2.createTrackbar("Scale X %", "Controls", 118, 200, lambda x: None)
     cv2.createTrackbar("Scale Y %", "Controls", 100, 200, lambda x: None)
     cv2.createTrackbar("Top %", "Controls", 20, 100, lambda x: None)
@@ -107,13 +102,6 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     while True:
         frame = picam.capture_array()
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-        #brightness controls
-        brightness = cv2.getTrackbarPos("Brightness", "Controls") / 100.0
-        frame = cv2.convertScaleAbs(frame, alpha=brightness, beta=0)
-
-        contrast = cv2.getTrackbarPos("Contrast", "Controls") / 100.0
-        frame = cv2.convertScaleAbs(frame, alpha=contrast * brightness, beta=0)
 
         scale_x = cv2.getTrackbarPos("Scale X %", "Controls") / 100.0
         scale_y = cv2.getTrackbarPos("Scale Y %", "Controls") / 100.0
