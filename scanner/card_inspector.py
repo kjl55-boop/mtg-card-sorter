@@ -126,8 +126,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
             snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
 
             for label, snippet in snippets:
-                card_h = card.shape[0]
-                scale_factor = card_h / snippet.shape[0]
+                scale_factor = 0.5  # Match your Live Feed scale
                 resized_snippet = cv2.resize(snippet, (0, 0), fx=scale_factor, fy=scale_factor)
                 cv2.imshow(f"Confirmed {label}", resized_snippet)
                 gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
