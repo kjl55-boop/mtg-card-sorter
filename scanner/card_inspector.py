@@ -82,7 +82,10 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.configure(config)
     picam.set_controls({
         "AfMode": controls.AfModeEnum.Continuous,
-        "AwbEnable": True,
+        #"AwbEnable": True,
+        "ColourGains": (1.8, 1.2),  # Adjust these based on your lighting
+        "ExposureTime": 10000,      # Microseconds; tune for brightness
+        "AnalogueGain": 1.0,
         "NoiseReductionMode": controls.draft.NoiseReductionModeEnum.HighQuality,
         "Sharpness": 2.0,
         "Contrast": 1.5,
