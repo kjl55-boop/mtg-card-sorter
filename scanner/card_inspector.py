@@ -39,6 +39,7 @@ def extract_snippets(card_img):
     return snippets
 
 def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7"):
+    global selected_roi
     Path(debug_dir).mkdir(parents=True, exist_ok=True)
 
     picam = Picamera2()
