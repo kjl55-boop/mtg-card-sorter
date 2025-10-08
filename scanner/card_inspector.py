@@ -37,20 +37,18 @@ def crop_rotated_box(frame, box):
     rect = cv2.minAreaRect(box.astype(np.float32))
     center, size, angle = rect
 
-    # Ensure width is the longer side
-    w, h = size
-    if w < h:
-        w, h = h, w
+    # Normalize angle
+    if angle < -45:
         angle += 90
-
-    size = (int(w), int(h))
 
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
     rotated = cv2.warpAffine(frame, M, frame.shape[1::-1], flags=cv2.INTER_CUBIC)
 
-    x, y = int(center[0] - size[0] / 2), int(center[1] - size[1] / 2)
-    cropped = rotated[y:y + size[1], x:x + size[0]]
+    w, h = int(size[0]), int(size[1])
+    x, y = int(center[0] - w / 2), int(center[1] - h / 2)
+    cropped = rotated[y:y + h, x:x + w]
     return cropped
+
 
 
 def extract_snippets(card_img, top_pct, mid_start_pct, mid_end_pct, bot_pct):
