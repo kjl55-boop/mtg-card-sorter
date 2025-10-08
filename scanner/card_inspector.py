@@ -43,33 +43,38 @@ def crop_rotated_box(frame, box, pad_x_pct=0.1, pad_y_pct=0.1):
         size = (size[1], size[0])
         angle += 90
 
-    # Rotate the full frame
-    M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    rotated = cv2.warpAffine(frame, M, frame.shape[1::-1], flags=cv2.INTER_CUBIC)
+    # Expand canvas
+    h, w = frame.shape[:2]
+    canvas = np.zeros((h * 2, w * 2, 3), dtype=np.uint8)
+    canvas[h//2:h//2 + h, w//2:w//2 + w] = frame
+    new_center = (w, h)  # center of expanded canvas
 
-    # Recalculate contour on rotated image
+    # Rotate on expanded canvas
+    M = cv2.getRotationMatrix2D(new_center, angle, 1.0)
+    rotated = cv2.warpAffine(canvas, M, (w * 2, h * 2), flags=cv2.INTER_CUBIC)
+
+    # Recalculate bounding box
     gray = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blurred, 50, 150)
+    edges = cv2.Canny(gray, 50, 150)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contours = [c for c in contours if cv2.contourArea(c) > 5000]
     if not contours:
-        return rotated  # fallback
+        return rotated
 
     card_contour = max(contours, key=cv2.contourArea)
-    x, y, w, h = cv2.boundingRect(card_contour)
+    x, y, w_box, h_box = cv2.boundingRect(card_contour)
 
     # Apply padding
-    pad_x = int(w * pad_x_pct / 2)
-    pad_y = int(h * pad_y_pct / 2)
-
+    pad_x = int(w_box * pad_x_pct / 2)
+    pad_y = int(h_box * pad_y_pct / 2)
     x = max(x - pad_x, 0)
     y = max(y - pad_y, 0)
-    w = min(w + 2 * pad_x, rotated.shape[1] - x)
-    h = min(h + 2 * pad_y, rotated.shape[0] - y)
+    w_box = min(w_box + 2 * pad_x, rotated.shape[1] - x)
+    h_box = min(h_box + 2 * pad_y, rotated.shape[0] - y)
 
-    cropped = rotated[y:y + h, x:x + w]
+    cropped = rotated[y:y + h_box, x:x + w_box]
     return cropped
+
 
 
 
