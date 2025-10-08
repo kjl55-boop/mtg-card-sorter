@@ -88,7 +88,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.start()
 
     cv2.namedWindow("Live Feed")
-    cv2.createTrackbar("Scale X %", "Live Feed", 100, 200, lambda x: None)
+    cv2.createTrackbar("Scale X %", "Live Feed", 118, 200, lambda x: None)
     cv2.createTrackbar("Scale Y %", "Live Feed", 100, 200, lambda x: None)
     cv2.createTrackbar("Box Scale %", "Live Feed", 100, 150, lambda x: None)
     cv2.createTrackbar("Top %", "Live Feed", 20, 100, lambda x: None)
@@ -126,7 +126,10 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
             snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
 
             for label, snippet in snippets:
-                cv2.imshow(f"Confirmed {label}", snippet)
+                card_h = card.shape[0]
+                scale_factor = card_h / snippet.shape[0]
+                resized_snippet = cv2.resize(snippet, (0, 0), fx=scale_factor, fy=scale_factor)
+                cv2.imshow(f"Confirmed {label}", resized_snippet)
                 gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
                 text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
                 print(f"[Confirmed] {label} OCR:\n{text}\n")
