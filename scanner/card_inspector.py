@@ -32,26 +32,24 @@ def get_rotated_card_bounds(frame, scale_x=1.0, scale_y=1.0):
 
     return scaled_box, card_contour
 
-
-def crop_rotated_box(frame, box):
+def crop_rotated_box(frame, box, pad_pct=0.1):
     rect = cv2.minAreaRect(box.astype(np.float32))
     center, size, angle = rect
 
-    # Normalize angle
     if angle < -45:
         angle += 90
 
-    # Optional: force portrait orientation
     if size[0] > size[1]:
         size = (size[1], size[0])
         angle += 90
 
+    padded_size = (int(size[0] * (1 + pad_pct)), int(size[1] * (1 + pad_pct)))
+
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
     rotated = cv2.warpAffine(frame, M, frame.shape[1::-1], flags=cv2.INTER_CUBIC)
 
-    w, h = int(size[0]), int(size[1])
-    x, y = int(center[0] - w / 2), int(center[1] - h / 2)
-    cropped = rotated[y:y + h, x:x + w]
+    x, y = int(center[0] - padded_size[0] / 2), int(center[1] - padded_size[1] / 2)
+    cropped = rotated[y:y + padded_size[1], x:x + padded_size[0]]
     return cropped
 
 def is_title_upright(snippet, expected_title="Forest"):
@@ -59,26 +57,20 @@ def is_title_upright(snippet, expected_title="Forest"):
     text = pytesseract.image_to_string(gray, config="--oem 1 --psm 7").strip().lower()
     return expected_title.lower() in text
 
-
 def extract_snippets(card_img, top_pct, mid_start_pct, mid_end_pct, bot_pct):
     h, w = card_img.shape[:2]
-    snippets = []
-
-    top = card_img[0:int(top_pct * h), :]
-    middle = card_img[int(mid_start_pct * h):int(mid_end_pct * h), :]
-    bottom = card_img[int(bot_pct * h):, :]
-
-    snippets.append(("Top", top))
-    snippets.append(("Middle", middle))
-    snippets.append(("Bottom", bottom))
-
+    snippets = [
+        ("Top", card_img[0:int(top_pct * h), :]),
+        ("Middle", card_img[int(mid_start_pct * h):int(mid_end_pct * h), :]),
+        ("Bottom", card_img[int(bot_pct * h):, :])
+    ]
     return snippets
 
 def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7"):
     Path(debug_dir).mkdir(parents=True, exist_ok=True)
 
     picam = Picamera2()
-    config = picam.create_preview_configuration(main={"size": (2304, 1296)})#(1080, 720)})
+    config = picam.create_preview_configuration(main={"size": (2304, 1296)})
     picam.configure(config)
     picam.set_controls({
         "AfMode": controls.AfModeEnum.Continuous,
@@ -91,6 +83,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.start()
 
     cv2.namedWindow("Controls")
+    cv2.createTrackbar("Box Pad %", "Controls", 10, 30, lambda x: None)
     cv2.createTrackbar("Scale X %", "Controls", 100, 200, lambda x: None)
     cv2.createTrackbar("Scale Y %", "Controls", 100, 200, lambda x: None)
     cv2.createTrackbar("Top %", "Controls", 20, 100, lambda x: None)
@@ -98,15 +91,14 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     cv2.createTrackbar("Mid End %", "Controls", 65, 100, lambda x: None)
     cv2.createTrackbar("Bottom %", "Controls", 80, 100, lambda x: None)
 
-
     while True:
         frame = picam.capture_array()
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         scale_x = cv2.getTrackbarPos("Scale X %", "Controls") / 100.0
         scale_y = cv2.getTrackbarPos("Scale Y %", "Controls") / 100.0
+        pad_pct = cv2.getTrackbarPos("Box Pad %", "Controls") / 100.0
         box, contour = get_rotated_card_bounds(frame, scale_x, scale_y)
-
 
         if box is not None:
             cv2.drawContours(frame, [box], -1, (0, 0, 255), 4)
@@ -118,11 +110,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         if key == ord('q'):
             break
         elif key == ord('c') and box is not None:
-            card = crop_rotated_box(frame, box)
-
-            scale_factor = 0.5  # Match your Live Feed scale
-            resized_card = cv2.resize(card, (0, 0), fx=scale_factor, fy=scale_factor)
-            cv2.imshow("Card", resized_card)
+            card = crop_rotated_box(frame, box, pad_pct)
 
             top_pct = cv2.getTrackbarPos("Top %", "Controls") / 100.0
             mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Controls") / 100.0
@@ -134,19 +122,22 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
                 card = cv2.rotate(card, cv2.ROTATE_180)
                 snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
 
+            resized_card = cv2.resize(card, (0, 0), fx=0.5, fy=0.5)
+            cv2.imshow("Card", resized_card)
 
             for label, snippet in snippets:
-                scale_factor = 0.5  # Match your Live Feed scale
-                resized_snippet = cv2.resize(snippet, (0, 0), fx=scale_factor, fy=scale_factor)
+                resized_snippet = cv2.resize(snippet, (0, 0), fx=0.5, fy=0.5)
                 cv2.imshow(f"Confirmed {label}", resized_snippet)
+
                 gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
                 text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
                 print(f"[Confirmed] {label} OCR:\n{text}\n")
 
         elif key == ord('s') and box is not None:
             ts = int(time.time())
-            card = crop_rotated_box(frame, box)
+            card = crop_rotated_box(frame, box, pad_pct)
             cv2.imwrite(str(Path(debug_dir) / f"{ts}_card.png"), card)
+
             with open(Path(debug_dir) / f"{ts}_ocr.txt", "w") as f:
                 top_pct = cv2.getTrackbarPos("Top %", "Controls") / 100.0
                 mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Controls") / 100.0
@@ -157,8 +148,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
                 for label, snippet in snippets:
                     gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
                     gray = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                             cv2.THRESH_BINARY, 11, 2)
-    
+                                                 cv2.THRESH_BINARY, 11, 2)
                     text = pytesseract.image_to_string(gray, config="--oem 1 --psm 6")
                     f.write(f"{label}:\n{text}\n\n")
 
