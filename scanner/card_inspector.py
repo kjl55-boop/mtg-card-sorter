@@ -110,11 +110,11 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.start()
 
     cv2.namedWindow("Controls")
-    cv2.createTrackbar("Pad X %", "Controls", 10, 50, lambda x: None)
-    cv2.createTrackbar("Pad Y %", "Controls", 10, 50, lambda x: None)
+    cv2.createTrackbar("Pad X %", "Controls", 0, 50, lambda x: None)
+    cv2.createTrackbar("Pad Y %", "Controls", 0, 50, lambda x: None)
 
-    cv2.createTrackbar("Top %", "Controls", 20, 100, lambda x: None)
-    cv2.createTrackbar("Mid Start %", "Controls", 35, 100, lambda x: None)
+    cv2.createTrackbar("Top %", "Controls", 10, 100, lambda x: None)
+    cv2.createTrackbar("Mid Start %", "Controls", 55, 100, lambda x: None)
     cv2.createTrackbar("Mid End %", "Controls", 65, 100, lambda x: None)
     cv2.createTrackbar("Bottom %", "Controls", 80, 100, lambda x: None)
 
