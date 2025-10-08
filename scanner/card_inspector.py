@@ -19,7 +19,7 @@ def get_rotated_card_bounds(frame, scale=1.0):
     card_contour = max(contours, key=cv2.contourArea)
     rect = cv2.minAreaRect(card_contour)
     box = cv2.boxPoints(rect)
-    box = np.int0(box)
+    box = box.astype(np.intp)
 
     center = np.mean(box, axis=0)
     scaled_box = np.array([center + scale * (pt - center) for pt in box], dtype=np.int32)
@@ -29,7 +29,7 @@ def get_rotated_card_bounds(frame, scale=1.0):
 def crop_rotated_box(frame, box):
     rect = cv2.minAreaRect(box.astype(np.float32))
     box_points = cv2.boxPoints(rect)
-    box_points = np.int8(box_points)
+    box_points = np.int0(box_points)
 
     width, height = int(rect[1][0]), int(rect[1][1])
 
