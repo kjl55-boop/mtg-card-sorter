@@ -68,7 +68,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     Path(debug_dir).mkdir(parents=True, exist_ok=True)
 
     picam = Picamera2()
-    config = picam.create_preview_configuration(main={"size": (1280, 720)})
+    config = picam.create_preview_configuration(main={"size": (2304, 1296)})
     picam.configure(config)
     picam.set_controls({
         "AfMode": controls.AfModeEnum.Continuous,
