@@ -92,8 +92,8 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     cv2.createTrackbar("Scale Y %", "Live Feed", 100, 200, lambda x: None)
     cv2.createTrackbar("Box Scale %", "Live Feed", 100, 150, lambda x: None)
     cv2.createTrackbar("Top %", "Live Feed", 10, 100, lambda x: None)
-    cv2.createTrackbar("Mid Start %", "Live Feed", 60, 100, lambda x: None)
-    cv2.createTrackbar("Mid End %", "Live Feed", 70, 100, lambda x: None)
+    cv2.createTrackbar("Mid Start %", "Live Feed", 50, 100, lambda x: None)
+    cv2.createTrackbar("Mid End %", "Live Feed", 65, 100, lambda x: None)
     cv2.createTrackbar("Bottom %", "Live Feed", 70, 100, lambda x: None)
 
     while True:
