@@ -6,13 +6,49 @@ from typing import Sequence, Optional, Tuple
 from pathlib import Path
 import pytesseract
 
-# reuse stack_images_grid from earlier helper or include it here
-def stack_images_grid(scale: float, img_matrix: Sequence[Sequence[np.ndarray]],
-                      labels: Optional[Sequence[Sequence[str]]] = None,
-                      ocr_text_for_tile: Optional[Tuple[int, int, str]] = None) -> np.ndarray:
-    # (Implementation identical to the stack_images_grid provided earlier)
-    # Paste the full function body from the helper you accepted.
-    raise NotImplementedError("Paste stack_images_grid implementation here.")
+def stack_images_grid(scale, img_matrix, labels=None, ocr_texts=None):
+    """
+    img_matrix: 2D list of images
+    labels: 2D list of strings (same shape as img_matrix)
+    ocr_texts: list of (row, col, text) to overlay
+    """
+    rows = len(img_matrix)
+    cols = len(img_matrix[0]) if rows > 0 else 0
+    height, width = img_matrix[0][0].shape[:2]
+
+    # Resize and label each image
+    labeled_rows = []
+    for r in range(rows):
+        row_imgs = []
+        for c in range(cols):
+            img = img_matrix[r][c]
+            if img is None:
+                img = np.zeros((height, width, 3), dtype=np.uint8)
+            if img.ndim == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            img = cv2.resize(img, (0, 0), fx=scale, fy=scale)
+
+            label = labels[r][c] if labels else ""
+            if label:
+                cv2.putText(img, label, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+            row_imgs.append(img)
+        labeled_rows.append(row_imgs)
+
+    # Overlay OCR text
+    if ocr_texts:
+        for r, c, text in ocr_texts:
+            if r < len(labeled_rows) and c < len(labeled_rows[r]):
+                img = labeled_rows[r][c]
+                lines = text.strip().splitlines()
+                for i, line in enumerate(lines[:3]):  # show up to 3 lines
+                    y = 40 + i * 20
+                    cv2.putText(img, line, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+    # Stack into grid
+    grid_img = cv2.vconcat([cv2.hconcat(row) for row in labeled_rows])
+    return grid_img
+
 
 def show_pipeline_grid_with_ocr(base_img, roi=None, cols=3, scale=0.45, debug_dir="debug_grid",
                                 live=False, tesseract_config=r'--oem 1 --psm 6'):
