@@ -29,11 +29,14 @@ def get_card_bounds(frame):
     card_contour = max(contours, key=cv2.contourArea)
     x, y, w, h = cv2.boundingRect(card_contour)
 
-    pad = 20
-    x = max(x - pad, 0)
-    y = max(y - pad, 0)
-    w = min(w + 2 * pad, frame.shape[1] - x)
-    h = min(h + 2 * pad, frame.shape[0] - y)
+    pad_pct = cv2.getTrackbarPos("Padding %", "Live Feed") / 100.0
+    pad_x = int(pad_pct * w)
+    pad_y = int(pad_pct * h)
+
+    x = max(x - pad_x, 0)
+    y = max(y - pad_y, 0)
+    w = min(w + 2 * pad_x, frame.shape[1] - x)
+    h = min(h + 2 * pad_y, frame.shape[0] - y)
 
     return x, y, w, h
 
@@ -68,6 +71,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.start()
 
     cv2.namedWindow("Live Feed")
+    cv2.createTrackbar("Padding %", "Live Feed", 5, 30, lambda x: None)
     cv2.createTrackbar("Top %", "Live Feed", 20, 100, lambda x: None)
     cv2.createTrackbar("Mid Start %", "Live Feed", 35, 100, lambda x: None)
     cv2.createTrackbar("Mid End %", "Live Feed", 65, 100, lambda x: None)
@@ -79,7 +83,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         card = auto_detect_card(frame)
         if card is not None:
             x, y, w, h = get_card_bounds(frame)  # new helper
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 4)
 
         if card is not None:
             rotated = rotate_ccw_90(card)
@@ -94,7 +98,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
             snippets = extract_snippets(rotated, top_pct, mid_start_pct, mid_end_pct, bot_pct)
 
             for label, snippet in snippets:
-                cv2.imshow(label, snippet)
+                #cv2.imshow(label, snippet)
                 gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
                 text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
                 cv2.putText(frame, f"{label}: {text[:30]}", (10, 30 + 25 * ["Top", "Middle", "Bottom"].index(label)),
