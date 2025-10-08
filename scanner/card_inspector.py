@@ -112,8 +112,8 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         frame = cv2.convertScaleAbs(frame, alpha=brightness, beta=0)
 
 
-        scale_x = cv2.getTrackbarPos("Scale X %", "Live Feed") / 100.0
-        scale_y = cv2.getTrackbarPos("Scale Y %", "Live Feed") / 100.0
+        scale_x = cv2.getTrackbarPos("Scale X %", "Controls") / 100.0
+        scale_y = cv2.getTrackbarPos("Scale Y %", "Controls") / 100.0
         box, contour = get_rotated_card_bounds(frame, scale_x, scale_y)
 
 
@@ -121,7 +121,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
             cv2.drawContours(frame, [box], -1, (0, 0, 255), 4)
 
         scaled = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-        cv2.imshow("Live Feed", scaled)
+        cv2.imshow("Controls", scaled)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
@@ -133,10 +133,10 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
             resized_card = cv2.resize(card, (0, 0), fx=scale_factor, fy=scale_factor)
             cv2.imshow("Card", resized_card)
 
-            top_pct = cv2.getTrackbarPos("Top %", "Live Feed") / 100.0
-            mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Live Feed") / 100.0
-            mid_end_pct = cv2.getTrackbarPos("Mid End %", "Live Feed") / 100.0
-            bot_pct = cv2.getTrackbarPos("Bottom %", "Live Feed") / 100.0
+            top_pct = cv2.getTrackbarPos("Top %", "Controls") / 100.0
+            mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Controls") / 100.0
+            mid_end_pct = cv2.getTrackbarPos("Mid End %", "Controls") / 100.0
+            bot_pct = cv2.getTrackbarPos("Bottom %", "Controls") / 100.0
 
             snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
             if not is_title_upright(snippets[0][1]):
@@ -157,10 +157,10 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
             card = crop_rotated_box(frame, box)
             cv2.imwrite(str(Path(debug_dir) / f"{ts}_card.png"), card)
             with open(Path(debug_dir) / f"{ts}_ocr.txt", "w") as f:
-                top_pct = cv2.getTrackbarPos("Top %", "Live Feed") / 100.0
-                mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Live Feed") / 100.0
-                mid_end_pct = cv2.getTrackbarPos("Mid End %", "Live Feed") / 100.0
-                bot_pct = cv2.getTrackbarPos("Bottom %", "Live Feed") / 100.0
+                top_pct = cv2.getTrackbarPos("Top %", "Controls") / 100.0
+                mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Controls") / 100.0
+                mid_end_pct = cv2.getTrackbarPos("Mid End %", "Controls") / 100.0
+                bot_pct = cv2.getTrackbarPos("Bottom %", "Controls") / 100.0
 
                 snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
                 for label, snippet in snippets:
