@@ -73,11 +73,17 @@ def show_pipeline_grid_with_ocr(base_img, roi=None, cols=3, scale=0.45, debug_di
                     row_labels.append("")
             matrix.append(row_imgs)
             labels.append(row_labels)
-        final_img = imgs[-1]
-        ocr_text = pytesseract.image_to_string(final_img, config=tesseract_config)
-        final_idx = len(imgs) - 1
-        ocr_triple = (final_idx // cols, final_idx % cols, ocr_text)
-        grid_img = stack_images_grid(scale, matrix, labels, ocr_triple)
+        ocr_texts = []
+        for idx, name in enumerate(names):
+            tile = imgs[idx]
+            gray = cv2.cvtColor(tile, cv2.COLOR_BGR2GRAY) if tile.ndim == 3 else tile
+            text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
+            if text:
+                r = idx // cols
+                c = idx % cols
+                ocr_texts.append((r, c, text))
+
+        grid_img = stack_images_grid(scale, matrix, labels, ocr_texts)
         cv2.imshow("Pipeline Grid with OCR", grid_img)
         key = cv2.waitKey(0) & 0xFF
         if key in (ord('q'), 27):
