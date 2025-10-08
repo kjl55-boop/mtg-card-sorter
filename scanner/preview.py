@@ -49,23 +49,6 @@ def stack_images_grid(scale, img_matrix, labels=None, ocr_texts=None):
 
             row_imgs.append(img)
         labeled_rows.append(row_imgs)
-    '''labeled_rows = []
-    for r in range(rows):
-        row_imgs = []
-        for c in range(cols):
-            img = img_matrix[r][c]
-            if img is None:
-                img = np.zeros((height, width, 3), dtype=np.uint8)
-            if img.ndim == 2:
-                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-            img = cv2.resize(img, (0, 0), fx=scale, fy=scale)
-
-            label = labels[r][c] if labels else ""
-            if label:
-                cv2.putText(img, label, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
-            row_imgs.append(img)
-        labeled_rows.append(row_imgs)'''
 
     # Overlay OCR text
     if ocr_texts:
