@@ -35,27 +35,23 @@ def get_rotated_card_bounds(frame, scale_x=1.0, scale_y=1.0):
 
 def crop_rotated_box(frame, box):
     rect = cv2.minAreaRect(box.astype(np.float32))
-    box_points = cv2.boxPoints(rect)
-    box_points = box_points.astype(np.intp)
+    center, size, angle = rect
 
-    width, height = int(rect[1][0]), int(rect[1][1])
+    # Ensure width is the longer side
+    w, h = size
+    if w < h:
+        w, h = h, w
+        angle += 90
 
-    # Ensure width is always the longer side
-    if width < height:
-        width, height = height, width
+    size = (int(w), int(h))
 
-    src_pts = box_points.astype("float32")
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    rotated = cv2.warpAffine(frame, M, frame.shape[1::-1], flags=cv2.INTER_CUBIC)
 
-    dst_pts = np.array([
-        [0, 0],
-        [width - 1, 0],
-        [width - 1, height - 1],
-        [0, height - 1]
-    ], dtype="float32")
+    x, y = int(center[0] - size[0] / 2), int(center[1] - size[1] / 2)
+    cropped = rotated[y:y + size[1], x:x + size[0]]
+    return cropped
 
-    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-    warped = cv2.warpPerspective(frame, M, (width, height))
-    return warped
 
 def extract_snippets(card_img, top_pct, mid_start_pct, mid_end_pct, bot_pct):
     h, w = card_img.shape[:2]
