@@ -66,7 +66,10 @@ def run_live_preview(debug_dir="debug_live", tesseract_config="--oem 1 --psm 7")
             for i, line in enumerate(ocr_text.splitlines()[:3]):
                 cv2.putText(display, line, (10, 30 + i * 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-        cv2.imshow("Live Feed", display)
+        scale_factor = 0.6  # or 0.5, 0.75 — tweak as needed
+        resized = cv2.resize(display, (0, 0), fx=scale_factor, fy=scale_factor)
+        cv2.imshow("Live Feed", resized)
+
         key = cv2.waitKey(1) & 0xFF
 
         if key == ord('q'):
