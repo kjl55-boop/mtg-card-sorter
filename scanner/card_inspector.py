@@ -13,7 +13,7 @@ def auto_detect_card(frame):
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     # Filter contours by area
-    contours = [c for c in contours if cv2.contourArea(c) > 10000]
+    contours = [c for c in contours if cv2.contourArea(c) > 1000]
     if not contours:
         return None
 
