@@ -49,6 +49,7 @@ def run_live_preview(debug_dir="debug_live", tesseract_config="--oem 1 --psm 7")
     cv2.setMouseCallback("Live Feed", mouse_callback)
 
     while True:
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         frame = picam.capture_array()
         display = frame.copy()
         ocr_text = ""
