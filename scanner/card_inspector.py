@@ -99,6 +99,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     while True:
         frame = picam.capture_array()
         #frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         scale_x = cv2.getTrackbarPos("Scale X %", "Live Feed") / 100.0
         scale_y = cv2.getTrackbarPos("Scale Y %", "Live Feed") / 100.0
