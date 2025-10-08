@@ -5,6 +5,7 @@ from .capture import capture_with_rpicam_still
 from .pipeline import compute_pipeline_steps
 from .preview import show_pipeline_grid_with_ocr
 from scanner.live_preview import run_live_preview
+from scanner.card_inspector import run_card_inspector
 
 
 def main():
@@ -13,7 +14,8 @@ def main():
     p.add_argument("--file", type=str, help="Path to image file to preview instead of capturing")
     args = p.parse_args()
 
-    run_live_preview()
+    run_card_inspector()
+    #run_live_preview()
 
     '''if args.file:
         img = cv2.imread(args.file)
