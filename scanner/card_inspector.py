@@ -95,6 +95,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
 
     cv2.namedWindow("Controls")
     cv2.createTrackbar("Brightness", "Controls", 100, 200, lambda x: None)
+    cv2.createTrackbar("Contrast", "Controls", 100, 300, lambda x: None)
     cv2.createTrackbar("Scale X %", "Controls", 118, 200, lambda x: None)
     cv2.createTrackbar("Scale Y %", "Controls", 100, 200, lambda x: None)
     cv2.createTrackbar("Top %", "Controls", 20, 100, lambda x: None)
@@ -111,6 +112,8 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         brightness = cv2.getTrackbarPos("Brightness", "Controls") / 100.0
         frame = cv2.convertScaleAbs(frame, alpha=brightness, beta=0)
 
+        contrast = cv2.getTrackbarPos("Contrast", "Controls") / 100.0
+        frame = cv2.convertScaleAbs(frame, alpha=contrast * brightness, beta=0)
 
         scale_x = cv2.getTrackbarPos("Scale X %", "Controls") / 100.0
         scale_y = cv2.getTrackbarPos("Scale Y %", "Controls") / 100.0
@@ -164,8 +167,10 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
 
                 snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
                 for label, snippet in snippets:
+                    gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
                     gray = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                              cv2.THRESH_BINARY, 11, 2)
+    
                     text = pytesseract.image_to_string(gray, config="--oem 1 --psm 6")
                     f.write(f"{label}:\n{text}\n\n")
 
