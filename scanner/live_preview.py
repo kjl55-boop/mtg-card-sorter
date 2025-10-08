@@ -2,6 +2,7 @@ import cv2
 import pytesseract
 import time
 from pathlib import Path
+from picamera2 import Picamera2
 
 selected_roi = None
 drawing = False
@@ -26,15 +27,16 @@ def extract_top_line(region, height_ratio=0.15):
 
 def run_live_preview(debug_dir="debug_live", tesseract_config="--oem 1 --psm 7"):
     Path(debug_dir).mkdir(parents=True, exist_ok=True)
-    cap = cv2.VideoCapture(0)
+
+    picam = Picamera2()
+    picam.configure(picam.create_preview_configuration(main={"size": (1280, 720)}))
+    picam.start()
+
     cv2.namedWindow("Live Feed")
     cv2.setMouseCallback("Live Feed", mouse_callback)
 
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
+        frame = picam.capture_array()
         display = frame.copy()
         ocr_text = ""
 
@@ -48,7 +50,6 @@ def run_live_preview(debug_dir="debug_live", tesseract_config="--oem 1 --psm 7")
             top_line, gray = extract_top_line(card)
             ocr_text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
 
-            # Overlay OCR result
             for i, line in enumerate(ocr_text.splitlines()[:3]):
                 cv2.putText(display, line, (10, 30 + i * 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
@@ -69,5 +70,4 @@ def run_live_preview(debug_dir="debug_live", tesseract_config="--oem 1 --psm 7")
             with open(Path(debug_dir) / f"{ts}_ocr.txt", "w") as f:
                 f.write(ocr_text)
 
-    cap.release()
     cv2.destroyAllWindows()
