@@ -32,7 +32,7 @@ def get_rotated_card_bounds(frame, scale_x=1.0, scale_y=1.0):
 
     return scaled_box, card_contour
 
-def crop_rotated_box(frame, box, pad_pct=0.1):
+def crop_rotated_box(frame, box, pad_x_pct=0.1, pad_y_pct=0.1):
     rect = cv2.minAreaRect(box.astype(np.float32))
     center, size, angle = rect
 
@@ -43,14 +43,18 @@ def crop_rotated_box(frame, box, pad_pct=0.1):
         size = (size[1], size[0])
         angle += 90
 
-    padded_size = (int(size[0] * (1 + pad_pct)), int(size[1] * (1 + pad_pct)))
+    # Apply directional padding
+    padded_width = int(size[0] * (1 + pad_x_pct))
+    padded_height = int(size[1] * (1 + pad_y_pct))
 
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
     rotated = cv2.warpAffine(frame, M, frame.shape[1::-1], flags=cv2.INTER_CUBIC)
 
-    x, y = int(center[0] - padded_size[0] / 2), int(center[1] - padded_size[1] / 2)
-    cropped = rotated[y:y + padded_size[1], x:x + padded_size[0]]
+    x = int(center[0] - padded_width / 2)
+    y = int(center[1] - padded_height / 2)
+    cropped = rotated[y:y + padded_height, x:x + padded_width]
     return cropped
+
 
 def is_title_upright(snippet, expected_title="Forest"):
     gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
@@ -83,9 +87,9 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.start()
 
     cv2.namedWindow("Controls")
-    cv2.createTrackbar("Box Pad %", "Controls", 10, 30, lambda x: None)
-    cv2.createTrackbar("Scale X %", "Controls", 100, 200, lambda x: None)
-    cv2.createTrackbar("Scale Y %", "Controls", 100, 200, lambda x: None)
+    cv2.createTrackbar("Pad X %", "Controls", 10, 50, lambda x: None)
+    cv2.createTrackbar("Pad Y %", "Controls", 10, 50, lambda x: None)
+
     cv2.createTrackbar("Top %", "Controls", 20, 100, lambda x: None)
     cv2.createTrackbar("Mid Start %", "Controls", 35, 100, lambda x: None)
     cv2.createTrackbar("Mid End %", "Controls", 65, 100, lambda x: None)
@@ -95,8 +99,8 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         frame = picam.capture_array()
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-        scale_x = cv2.getTrackbarPos("Scale X %", "Controls") / 100.0
-        scale_y = cv2.getTrackbarPos("Scale Y %", "Controls") / 100.0
+        scale_x = 1.0
+        scale_y = 1.0
         pad_pct = cv2.getTrackbarPos("Box Pad %", "Controls") / 100.0
         box, contour = get_rotated_card_bounds(frame, scale_x, scale_y)
 
@@ -110,7 +114,10 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         if key == ord('q'):
             break
         elif key == ord('c') and box is not None:
-            card = crop_rotated_box(frame, box, pad_pct)
+            pad_x = cv2.getTrackbarPos("Pad X %", "Controls") / 100.0
+            pad_y = cv2.getTrackbarPos("Pad Y %", "Controls") / 100.0
+            card = crop_rotated_box(frame, box, pad_x, pad_y)
+
 
             top_pct = cv2.getTrackbarPos("Top %", "Controls") / 100.0
             mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Controls") / 100.0
