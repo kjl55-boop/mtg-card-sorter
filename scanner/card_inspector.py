@@ -43,12 +43,14 @@ def crop_rotated_box(frame, box, pad_x_pct=0.1, pad_y_pct=0.1):
         size = (size[1], size[0])
         angle += 90
 
+    # Rotate the full frame
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
     rotated = cv2.warpAffine(frame, M, frame.shape[1::-1], flags=cv2.INTER_CUBIC)
 
-    # Recalculate bounding box on rotated image
-    rotated_gray = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(rotated_gray, 50, 150)
+    # Recalculate contour on rotated image
+    gray = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 50, 150)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contours = [c for c in contours if cv2.contourArea(c) > 5000]
     if not contours:
@@ -68,6 +70,7 @@ def crop_rotated_box(frame, box, pad_x_pct=0.1, pad_y_pct=0.1):
 
     cropped = rotated[y:y + h, x:x + w]
     return cropped
+
 
 
 
