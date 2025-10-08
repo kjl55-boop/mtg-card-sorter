@@ -54,7 +54,10 @@ def crop_rotated_box(frame, box):
     cropped = rotated[y:y + h, x:x + w]
     return cropped
 
-
+def is_title_upright(snippet, expected_title="Forest"):
+    gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
+    text = pytesseract.image_to_string(gray, config="--oem 1 --psm 7").strip().lower()
+    return expected_title.lower() in text
 
 
 def extract_snippets(card_img, top_pct, mid_start_pct, mid_end_pct, bot_pct):
@@ -98,8 +101,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
 
     while True:
         frame = picam.capture_array()
-        #frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         scale_x = cv2.getTrackbarPos("Scale X %", "Live Feed") / 100.0
         scale_y = cv2.getTrackbarPos("Scale Y %", "Live Feed") / 100.0
@@ -128,6 +130,10 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
             bot_pct = cv2.getTrackbarPos("Bottom %", "Live Feed") / 100.0
 
             snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
+            if not is_title_upright(snippets[0][1]):
+                card = cv2.rotate(card, cv2.ROTATE_180)
+                snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
+
 
             for label, snippet in snippets:
                 scale_factor = 0.5  # Match your Live Feed scale
