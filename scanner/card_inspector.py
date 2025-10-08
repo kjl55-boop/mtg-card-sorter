@@ -95,7 +95,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         box, contour = get_rotated_card_bounds(frame, scale)
 
         if box is not None:
-            cv2.drawContours(frame, [box], -1, (0, 255, 255), 2)
+            cv2.drawContours(frame, [box], -1, (0, 0, 255), 4)
 
         scaled = cv2.resize(frame, (0, 0), fx=0.6, fy=0.6)
         cv2.imshow("Live Feed", scaled)
