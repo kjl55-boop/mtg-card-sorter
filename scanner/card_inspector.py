@@ -6,17 +6,7 @@ from picamera2 import Picamera2
 import numpy as np
 from libcamera import controls
 
-def auto_detect_card(frame):
-    bounds = get_card_bounds(frame)
-    if bounds is None:
-        return None
-    x, y, w, h = bounds
-    return frame[y:y+h, x:x+w]
-
-def rotate_ccw_90(image):
-    return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
-
-def get_card_bounds(frame):
+def get_rotated_card_bounds(frame, scale=1.0):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 50, 150)
@@ -24,21 +14,41 @@ def get_card_bounds(frame):
 
     contours = [c for c in contours if cv2.contourArea(c) > 5000]
     if not contours:
-        return None
+        return None, None
 
     card_contour = max(contours, key=cv2.contourArea)
-    x, y, w, h = cv2.boundingRect(card_contour)
+    rect = cv2.minAreaRect(card_contour)
+    box = cv2.boxPoints(rect)
+    box = np.int0(box)
 
-    pad_pct = cv2.getTrackbarPos("Padding %", "Live Feed") / 100.0
-    pad_x = int(pad_pct * w)
-    pad_y = int(pad_pct * h)
+    center = np.mean(box, axis=0)
+    scaled_box = np.array([center + scale * (pt - center) for pt in box], dtype=np.int32)
 
-    x = max(x - pad_x, 0)
-    y = max(y - pad_y, 0)
-    w = min(w + 2 * pad_x, frame.shape[1] - x)
-    h = min(h + 2 * pad_y, frame.shape[0] - y)
+    return scaled_box, card_contour
 
-    return x, y, w, h
+def crop_rotated_box(frame, box):
+    rect = cv2.minAreaRect(box.astype(np.float32))
+    box_points = cv2.boxPoints(rect)
+    box_points = np.int0(box_points)
+
+    width, height = int(rect[1][0]), int(rect[1][1])
+
+    # Ensure width is always the longer side
+    if width < height:
+        width, height = height, width
+
+    src_pts = box_points.astype("float32")
+
+    dst_pts = np.array([
+        [0, 0],
+        [width - 1, 0],
+        [width - 1, height - 1],
+        [0, height - 1]
+    ], dtype="float32")
+
+    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    warped = cv2.warpPerspective(frame, M, (width, height))
+    return warped
 
 def extract_snippets(card_img, top_pct, mid_start_pct, mid_end_pct, bot_pct):
     h, w = card_img.shape[:2]
@@ -58,7 +68,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     Path(debug_dir).mkdir(parents=True, exist_ok=True)
 
     picam = Picamera2()
-    config = picam.create_preview_configuration(main={"size": (2304, 1296)})
+    config = picam.create_preview_configuration(main={"size": (1280, 720)})
     picam.configure(config)
     picam.set_controls({
         "AfMode": controls.AfModeEnum.Continuous,
@@ -71,7 +81,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.start()
 
     cv2.namedWindow("Live Feed")
-    cv2.createTrackbar("Padding %", "Live Feed", 5, 30, lambda x: None)
+    cv2.createTrackbar("Box Scale %", "Live Feed", 100, 150, lambda x: None)
     cv2.createTrackbar("Top %", "Live Feed", 20, 100, lambda x: None)
     cv2.createTrackbar("Mid Start %", "Live Feed", 35, 100, lambda x: None)
     cv2.createTrackbar("Mid End %", "Live Feed", 65, 100, lambda x: None)
@@ -80,29 +90,12 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     while True:
         frame = picam.capture_array()
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        card = auto_detect_card(frame)
-        if card is not None:
-            x, y, w, h = get_card_bounds(frame)  # new helper
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 4)
 
-        if card is not None:
-            rotated = rotate_ccw_90(card)
-            cv2.imshow("Card", rotated)
+        scale = cv2.getTrackbarPos("Box Scale %", "Live Feed") / 100.0
+        box, contour = get_rotated_card_bounds(frame, scale)
 
-            # Get slider values
-            top_pct = cv2.getTrackbarPos("Top %", "Live Feed") / 100.0
-            mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Live Feed") / 100.0
-            mid_end_pct = cv2.getTrackbarPos("Mid End %", "Live Feed") / 100.0
-            bot_pct = cv2.getTrackbarPos("Bottom %", "Live Feed") / 100.0
-
-            snippets = extract_snippets(rotated, top_pct, mid_start_pct, mid_end_pct, bot_pct)
-
-            for label, snippet in snippets:
-                #cv2.imshow(label, snippet)
-                gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
-                text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
-                cv2.putText(frame, f"{label}: {text[:30]}", (10, 30 + 25 * ["Top", "Middle", "Bottom"].index(label)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        if box is not None:
+            cv2.drawContours(frame, [box], -1, (0, 255, 255), 2)
 
         scaled = cv2.resize(frame, (0, 0), fx=0.6, fy=0.6)
         cv2.imshow("Live Feed", scaled)
@@ -110,18 +103,16 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break
-        elif key == ord('s') and card is not None:
-            ts = int(time.time())
-            cv2.imwrite(str(Path(debug_dir) / f"{ts}_card.png"), rotated)
-            with open(Path(debug_dir) / f"{ts}_ocr.txt", "w") as f:
-                for label, snippet in snippets:
-                    gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
-                    text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
-                    f.write(f"{label}:\n{text}\n\n")
-        elif key == ord('c') and card is not None:
-            confirmed_card = card.copy()
-            confirmed_rotated = rotate_ccw_90(confirmed_card)
-            snippets = extract_snippets(confirmed_rotated, top_pct, mid_start_pct, mid_end_pct, bot_pct)
+        elif key == ord('c') and box is not None:
+            card = crop_rotated_box(frame, box)
+            cv2.imshow("Card", card)
+
+            top_pct = cv2.getTrackbarPos("Top %", "Live Feed") / 100.0
+            mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Live Feed") / 100.0
+            mid_end_pct = cv2.getTrackbarPos("Mid End %", "Live Feed") / 100.0
+            bot_pct = cv2.getTrackbarPos("Bottom %", "Live Feed") / 100.0
+
+            snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
 
             for label, snippet in snippets:
                 cv2.imshow(f"Confirmed {label}", snippet)
@@ -129,5 +120,20 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
                 text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
                 print(f"[Confirmed] {label} OCR:\n{text}\n")
 
+        elif key == ord('s') and box is not None:
+            ts = int(time.time())
+            card = crop_rotated_box(frame, box)
+            cv2.imwrite(str(Path(debug_dir) / f"{ts}_card.png"), card)
+            with open(Path(debug_dir) / f"{ts}_ocr.txt", "w") as f:
+                top_pct = cv2.getTrackbarPos("Top %", "Live Feed") / 100.0
+                mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Live Feed") / 100.0
+                mid_end_pct = cv2.getTrackbarPos("Mid End %", "Live Feed") / 100.0
+                bot_pct = cv2.getTrackbarPos("Bottom %", "Live Feed") / 100.0
+
+                snippets = extract_snippets(card, top_pct, mid_start_pct, mid_end_pct, bot_pct)
+                for label, snippet in snippets:
+                    gray = cv2.cvtColor(snippet, cv2.COLOR_BGR2GRAY)
+                    text = pytesseract.image_to_string(gray, config=tesseract_config).strip()
+                    f.write(f"{label}:\n{text}\n\n")
 
     cv2.destroyAllWindows()
