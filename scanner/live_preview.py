@@ -30,8 +30,20 @@ def run_live_preview(debug_dir="debug_live", tesseract_config="--oem 1 --psm 7")
     Path(debug_dir).mkdir(parents=True, exist_ok=True)
 
     picam = Picamera2()
-    picam.configure(picam.create_preview_configuration(main={"size": (1280, 720)}))
+    from libcamera import controls
+    config = picam.create_preview_configuration(main={"size": (2304, 1296)})
+    picam.configure(config)
     picam.start()
+
+    picam.set_controls({
+        "AfMode": controls.AfModeEnum.Continuous,
+        "AwbEnable": True,
+        "NoiseReductionMode": controls.draft.NoiseReductionModeEnum.HighQuality,
+        "Sharpness": 2.0,
+        "Contrast": 1.5,
+        "Saturation": 1.5
+    })
+
 
     cv2.namedWindow("Live Feed")
     cv2.setMouseCallback("Live Feed", mouse_callback)
