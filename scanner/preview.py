@@ -5,6 +5,7 @@ from math import ceil
 from typing import Sequence, Optional, Tuple
 from pathlib import Path
 import pytesseract
+import time
 
 def stack_images_grid(scale, img_matrix, labels=None, ocr_texts=None):
     """
@@ -94,5 +95,6 @@ def show_pipeline_grid_with_ocr(base_img, roi=None, cols=3, scale=0.45, debug_di
                 fname = Path(debug_dir) / f"{ts}_{i:02d}_{n}.png"
                 cv2.imwrite(str(fname), im)
             with open(Path(debug_dir) / f"{ts}_ocr.txt", "w") as f:
-                f.write(ocr_text)
+                for r, c, text in ocr_texts:
+                    f.write(f"[{r},{c}] {text.strip()}\n\n")
     cv2.destroyAllWindows()
