@@ -26,6 +26,7 @@ def extract_top_line(region, height_ratio=0.15):
     return top, gray
 
 def run_live_preview(debug_dir="debug_live", tesseract_config="--oem 1 --psm 7"):
+    global selected_roi
     Path(debug_dir).mkdir(parents=True, exist_ok=True)
 
     picam = Picamera2()
