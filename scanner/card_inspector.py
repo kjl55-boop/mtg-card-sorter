@@ -78,7 +78,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     Path(debug_dir).mkdir(parents=True, exist_ok=True)
 
     picam = Picamera2()
-    config = picam.create_preview_configuration(main={"size": (1080, 720)})
+    config = picam.create_preview_configuration(main={"size": (2304, 1296)})#(1080, 720)})
     picam.configure(config)
     picam.set_controls({
         "AfMode": controls.AfModeEnum.Continuous,
@@ -91,7 +91,7 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     picam.start()
 
     cv2.namedWindow("Controls")
-    cv2.createTrackbar("Scale X %", "Controls", 118, 200, lambda x: None)
+    cv2.createTrackbar("Scale X %", "Controls", 100, 200, lambda x: None)
     cv2.createTrackbar("Scale Y %", "Controls", 100, 200, lambda x: None)
     cv2.createTrackbar("Top %", "Controls", 20, 100, lambda x: None)
     cv2.createTrackbar("Mid Start %", "Controls", 35, 100, lambda x: None)
