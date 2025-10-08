@@ -116,7 +116,10 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
             break
         elif key == ord('c') and box is not None:
             card = crop_rotated_box(frame, box)
-            cv2.imshow("Card", card)
+
+            scale_factor = 0.5  # Match your Live Feed scale
+            resized_card = cv2.resize(card, (0, 0), fx=scale_factor, fy=scale_factor)
+            cv2.imshow("Card", resized_card)
 
             top_pct = cv2.getTrackbarPos("Top %", "Live Feed") / 100.0
             mid_start_pct = cv2.getTrackbarPos("Mid Start %", "Live Feed") / 100.0
