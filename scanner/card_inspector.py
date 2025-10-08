@@ -93,18 +93,24 @@ def run_card_inspector(debug_dir="debug_card", tesseract_config="--oem 1 --psm 7
     })
     picam.start()
 
-    cv2.namedWindow("Live Feed")
-    cv2.createTrackbar("Scale X %", "Live Feed", 100, 200, lambda x: None)
-    cv2.createTrackbar("Scale Y %", "Live Feed", 100, 200, lambda x: None)
-    cv2.createTrackbar("Box Scale %", "Live Feed", 100, 150, lambda x: None)
-    cv2.createTrackbar("Top %", "Live Feed", 10, 100, lambda x: None)
-    cv2.createTrackbar("Mid Start %", "Live Feed", 50, 100, lambda x: None)
-    cv2.createTrackbar("Mid End %", "Live Feed", 65, 100, lambda x: None)
-    cv2.createTrackbar("Bottom %", "Live Feed", 70, 100, lambda x: None)
+    cv2.namedWindow("Controls")
+    cv2.createTrackbar("Brightness", "Controls", 100, 200, lambda x: None)
+    cv2.createTrackbar("Scale X %", "Controls", 118, 200, lambda x: None)
+    cv2.createTrackbar("Scale Y %", "Controls", 100, 200, lambda x: None)
+    cv2.createTrackbar("Top %", "Controls", 20, 100, lambda x: None)
+    cv2.createTrackbar("Mid Start %", "Controls", 35, 100, lambda x: None)
+    cv2.createTrackbar("Mid End %", "Controls", 65, 100, lambda x: None)
+    cv2.createTrackbar("Bottom %", "Controls", 80, 100, lambda x: None)
+
 
     while True:
         frame = picam.capture_array()
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+        #brightness controls
+        brightness = cv2.getTrackbarPos("Brightness", "Controls") / 100.0
+        frame = cv2.convertScaleAbs(frame, alpha=brightness, beta=0)
+
 
         scale_x = cv2.getTrackbarPos("Scale X %", "Live Feed") / 100.0
         scale_y = cv2.getTrackbarPos("Scale Y %", "Live Feed") / 100.0
