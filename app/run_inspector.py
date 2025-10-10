@@ -290,3 +290,14 @@ def main_loop(cam_index=0, preview_scale=0.55):
             print("Preview scale ->", preview_scale)
         elif key == ord('-') or key == ord('_'):
             preview_scale = max(0.2, preview_scale - 0.05)
+            print("Preview scale ->", preview_scale)
+
+    try:
+        if PICAMERA2_AVAILABLE and 'picam' in locals() and picam is not None:
+            picam.stop()
+    except Exception:
+        pass
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main_loop()
