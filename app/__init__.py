@@ -1,27 +1,6 @@
 """
-app package initializer
-
-Expose common paths and ensure data folders exist.
+app package
+Expose a simple public API and version.
 """
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
-SCRYFALL_DIR = DATA_DIR / "scryfall_db"
-DESCRIPTORS_DIR = SCRYFALL_DIR / "descriptors"
-DEBUG_DIR = DATA_DIR / "debug"
-RESULTS_DIR = ROOT / "results"
-LOGS_DIR = ROOT / "logs"
-
-for p in (DATA_DIR, SCRYFALL_DIR, DESCRIPTORS_DIR, DEBUG_DIR, RESULTS_DIR, LOGS_DIR):
-    p.mkdir(parents=True, exist_ok=True)
-
-__all__ = [
-    "ROOT",
-    "DATA_DIR",
-    "SCRYFALL_DIR",
-    "DESCRIPTORS_DIR",
-    "DEBUG_DIR",
-    "RESULTS_DIR",
-    "LOGS_DIR",
-]
+__all__ = ["config", "capture", "crop", "ocr", "matcher", "db_builder", "utils", "run_inspector"]
+__version__ = "0.1"
