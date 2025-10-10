@@ -1,11 +1,11 @@
 """
-Card detection and cropping functions.
-Pure image processing functions that are easy to unit test.
-"""
+Crop and deskew utilities.
 
+Deterministic, padding-free normalization of card images.
+"""
+from typing import Optional, Tuple
 import cv2
 import numpy as np
-
 from .config import NORMALIZED_SIZE
 
 OUT_W, OUT_H = NORMALIZED_SIZE
@@ -29,38 +29,57 @@ def _four_point_transform(image: np.ndarray, pts: np.ndarray, out_w: int, out_h:
     return warped
 
 
-def _find_largest_quad(gray: np.ndarray, min_area: int = 2000) -> Optional[np.ndarray]:
+def _find_largest_quad(gray: np.ndarray, canny_low: int = 50, canny_high: int = 150, min_area: int = 2000) -> Optional[np.ndarray]:
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edged = cv2.Canny(blurred, 50, 150)
+    edged = cv2.Canny(blurred, canny_low, canny_high)
     contours, _ = cv2.findContours(edged, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        return rotated
+        return None
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    for c in contours[:20]:
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        if len(approx) == 4 and cv2.contourArea(approx) > min_area:
+            return approx.reshape(4, 2)
+    return None
 
-    card_contour = max(contours, key=cv2.contourArea)
-    x, y, w_box, h_box = cv2.boundingRect(card_contour)
 
-    pad_x = int(w_box * pad_x_pct / 2)
-    pad_y = int(h_box * pad_y_pct / 2)
-    x = max(x - pad_x, 0)
-    y = max(y - pad_y, 0)
-    w_box = min(w_box + 2*pad_x, rotated.shape[1] - x)
-    h_box = min(h_box + 2*pad_y, rotated.shape[0] - y)
-
-    cropped = rotated[y:y+h_box, x:x+w_box].copy()
-    return cropped
-
-def extract_snippets(card_img, top_pct, mid_start_pct, mid_end_pct, bot_pct):
+def normalize_card_image(frame_bgr: np.ndarray, size: Tuple[int, int] = (OUT_W, OUT_H),
+                         canny_low: int = 50, canny_high: int = 150, eps_scale: float = 0.02,
+                         min_area: int = 2000) -> Optional[np.ndarray]:
     """
-    Return list of (label, snippet_img).
-    Clamps indices to valid ranges.
+    Return a deskewed, tightly cropped BGR image sized to `size`.
+    No padding is added. If detection fails, return a centered crop resized to size.
     """
-    h, w = card_img.shape[:2]
-    top_h = max(1, int(top_pct * h))
-    mid_s = int(mid_start_pct * h)
-    mid_e = int(mid_end_pct * h)
-    bot_y = int(bot_pct * h)
-
-    top = card_img[0:top_h, :]
-    middle = card_img[mid_s:mid_e, :]
-    bottom = card_img[bot_y:, :]
-    return [("Top", top), ("Middle", middle), ("Bottom", bottom)]
+    if frame_bgr is None:
+        return None
+    out_w, out_h = size
+    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    # find quad with adjustable params
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edged = cv2.Canny(blurred, canny_low, canny_high)
+    contours, _ = cv2.findContours(edged, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)
+        for c in contours[:20]:
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, eps_scale * peri, True)
+            if len(approx) == 4 and cv2.contourArea(approx) > min_area:
+                pts = approx.reshape(4, 2).astype("float32")
+                ordered = _order_points(pts)
+                warped = _four_point_transform(frame_bgr, ordered, out_w, out_h)
+                return warped
+    # fallback center-crop preserving output aspect
+    H, W = frame_bgr.shape[:2]
+    target_ratio = out_w / out_h
+    current_ratio = W / H
+    if current_ratio > target_ratio:
+        new_w = int(target_ratio * H)
+        x0 = max(0, (W - new_w) // 2)
+        crop = frame_bgr[:, x0:x0 + new_w]
+    else:
+        new_h = int(W / target_ratio)
+        y0 = max(0, (H - new_h) // 2)
+        crop = frame_bgr[y0:y0 + new_h, :]
+    resized = cv2.resize(crop, (out_w, out_h), interpolation=cv2.INTER_AREA)
+    return resized
