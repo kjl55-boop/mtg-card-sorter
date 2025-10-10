@@ -15,8 +15,8 @@ from app import capture, crop, matcher, config, utils, ocr
 
 # --- Controls defaults (sync with config but adjustable at runtime) ----------
 DEFAULTS = {
-    "pad_x_pct": int(config.DEFAULT_TOP_PCT * 100),        # repurposed default; will be overwritten
-    "pad_y_pct": 8,
+    "pad_x_pct": 0,        # repurposed default; will be overwritten
+    "pad_y_pct": 0,
     "min_area": 5000,
     "top_pct": int(config.DEFAULT_TOP_PCT * 100),
     "mid_start_pct": int(config.DEFAULT_MID_START_PCT * 100),

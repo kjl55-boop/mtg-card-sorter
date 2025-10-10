@@ -27,8 +27,8 @@ MATCH_TOP_K = 12
 
 # Crop/snippet defaults (fractions of card height)
 DEFAULT_TOP_PCT = 0.12
-DEFAULT_MID_START_PCT = 0.48
-DEFAULT_MID_END_PCT = 0.58
+DEFAULT_MID_START_PCT = 0.55
+DEFAULT_MID_END_PCT = 0.63
 DEFAULT_BOTTOM_PCT = 0.78
 
 # OCR defaults
