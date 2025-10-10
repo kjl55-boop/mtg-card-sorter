@@ -156,4 +156,21 @@ def main_loop(cam_index=0):
             else:
                 for d, cid, name, phx, desc in cands:
                     desc_path = Path("data/scryfall_db/descriptors") / (desc if desc else f"{cid}.npz")
-                    ok, good = verify_candidate_orb(norm
+                    ok, good = verify_candidate_orb(norm, desc_path)
+                    print("Verify", name, "h=", d, "ok=", ok, "good=", good)
+                    if ok:
+                        print("Verified match:", cid, name)
+                        last_match_info = f"VERIFIED {name} (h={d} good={good})"
+                        matched = True
+                        break
+                if not matched:
+                    last_match_info = f"No verified match (top h={d0})"
+            # small pause so overlay updates
+            time.sleep(0.2)
+        elif key in (ord('q'), 27):
+            break
+
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main_loop()
