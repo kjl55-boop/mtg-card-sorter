@@ -1,125 +1,65 @@
 """
-Runtime matcher: pHash prefilter -> ORB verification.
-Lightweight caching of metadata; descriptor files loaded on demand.
+Matching utilities: phash prefilter and descriptor (ORB) verification.
+
+Functions:
+ - load_db_phashes(db_path) -> list of (id,name,phash,desc_file)
+ - top_phash_candidates(query_ph, rows, top_n) -> list of candidates sorted by hamming
+ - verify_candidate_orb(query_bgr, candidate_npz_path, min_good, ratio) -> (bool, good_matches)
 """
 
-import sqlite3
-import os
 from pathlib import Path
-from PIL import Image
-import imagehash
+import sqlite3
+from typing import Tuple
 import numpy as np
 import cv2
-from app import config, utils
+from .config import DESCRIPTOR_MIN_GOOD_MATCHES, DESCRIPTOR_RATIO_TEST, PHASH_TOP_N_CANDIDATES
+import imagehash
 
-DB_PATH = config.DB_PATH
-DESC_DIR = Path(config.DESC_DIR)
-ORB_FEATURES = config.ORB_FEATURES
-PH_MAX = config.PHASH_HAMMING_THRESHOLD
-TOP_K = config.MATCH_TOP_K
-
-orb = cv2.ORB_create(nfeatures=ORB_FEATURES)
-bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-
-# Cache tiny table in memory
-_CARD_TABLE = None
-
-def _load_table():
-    global _CARD_TABLE
-    if _CARD_TABLE is not None:
-        return _CARD_TABLE
-    if not Path(DB_PATH).exists():
-        raise FileNotFoundError(f"DB not found: {DB_PATH}")
-    conn = sqlite3.connect(DB_PATH)
+def load_db_phashes(db_path: str = str(Path("data/scryfall_db/cards.db"))):
+    conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-    cur.execute("SELECT id, name, set_code, collector_number, image_url, phash, desc_file FROM cards")
+    cur.execute("SELECT id,name,phash,desc_file FROM cards WHERE phash IS NOT NULL AND phash != ''")
     rows = cur.fetchall()
     conn.close()
-    _CARD_TABLE = [dict(id=r[0], name=r[1], set_code=r[2], collector_number=r[3],
-                        image_url=r[4], phash=r[5], desc_file=r[6]) for r in rows]
-    return _CARD_TABLE
+    return rows
 
-def _phash_from_array(np_img):
-    pil = Image.fromarray(cv2.cvtColor(np_img, cv2.COLOR_BGR2RGB))
-    return imagehash.phash(pil)
+def _hamming(a_hex: str, b_hex: str) -> int:
+    return bin(int(a_hex, 16) ^ int(b_hex, 16)).count("1")
 
-def _hamming(ph, hex_str):
-    other = imagehash.hex_to_hash(hex_str)
-    return ph - other
-
-def get_candidates_by_phash(np_img, max_hamming=PH_MAX, top_k=TOP_K):
-    table = _load_table()
-    ph = _phash_from_array(np_img)
-    candidates = []
-    for rec in table:
+def top_phash_candidates(query_ph: str, rows, top_n: int = PHASH_TOP_N_CANDIDATES):
+    scores = []
+    for cid, name, ph, desc_file in rows:
         try:
-            d = _hamming(ph, rec["phash"])
-            if d <= max_hamming:
-                candidates.append((rec, d))
+            d = _hamming(query_ph, ph)
+            scores.append((d, cid, name, ph, desc_file))
         except Exception:
             continue
-    candidates.sort(key=lambda x: x[1])
-    return [c[0] for c in candidates[:top_k]]
+    scores.sort(key=lambda x: x[0])
+    return scores[:top_n]
 
-def _load_descriptor(rec):
-    path = DESC_DIR / (rec["id"] + ".npz")
-    if not path.exists():
-        return None, None
-    data = np.load(path)
-    des = data["des"] if "des" in data else np.array([])
-    kps_arr = data["kps"] if "kps" in data else np.array([])
-    # convert kps_arr -> cv2.KeyPoint list
-    kps = []
-    if kps_arr.size != 0:
-        for row in kps_arr:
-            x, y, size, angle = float(row[0]), float(row[1]), float(row[2]), float(row[3])
-            kps.append(cv2.KeyPoint(x, y, _size=size, _angle=angle))
-    return kps, des
-
-def verify_orb(np_img, rec, min_good=12):
-    kps2, des2 = _load_descriptor(rec)
-    if des2 is None or des2.size == 0:
-        return 0, 0
-    gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY)
-    H = 512
-    scale = H / gray.shape[0]
-    gray_r = cv2.resize(gray, (int(gray.shape[1]*scale), H), interpolation=cv2.INTER_LINEAR)
-    kp1, des1 = orb.detectAndCompute(gray_r, None)
-    if des1 is None or des1.size == 0:
-        return 0, 0
-    # knn match
+def verify_candidate_orb(query_bgr: np.ndarray, candidate_npz_path: Path, min_good: int = DESCRIPTOR_MIN_GOOD_MATCHES, ratio: float = DESCRIPTOR_RATIO_TEST) -> Tuple[bool,int]:
+    # compute ORB descriptors for query
+    orb = cv2.ORB_create(1000)
+    qgray = cv2.cvtColor(query_bgr, cv2.COLOR_BGR2GRAY)
+    qk, qd = orb.detectAndCompute(qgray, None)
+    if qd is None or len(qd) == 0:
+        return False, 0
+    # load stored descriptors
     try:
-        matches = bf.knnMatch(des1, des2, k=2)
+        data = np.load(str(candidate_npz_path), allow_pickle=True)
+        des_c = data.get("des")
+        if des_c is None or len(des_c) == 0:
+            return False, 0
+        des_c = des_c.astype(np.uint8)
     except Exception:
-        return 0, 0
+        return False, 0
+    # match with BFMatcher Hamming
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+    matches = bf.knnMatch(qd.astype(np.uint8), des_c, k=2)
     good = []
     for m_n in matches:
-        if len(m_n) != 2:
-            continue
-        m, n = m_n
-        if m.distance < 0.75 * n.distance:
-            good.append(m)
-    good_count = len(good)
-    inliers = 0
-    if good_count >= min_good and len(kps2) > 3:
-        src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1,1,2)
-        dst_pts = np.float32([kps2[m.trainIdx].pt for m in good]).reshape(-1,1,2)
-        try:
-            M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-            if mask is not None:
-                inliers = int(mask.sum())
-        except Exception:
-            inliers = 0
-    return good_count, inliers
-
-def match_card(np_img, ph_max=PH_MAX, top_k=TOP_K):
-    candidates = get_candidates_by_phash(np_img, max_hamming=ph_max, top_k=top_k)
-    best = None
-    best_score = -1
-    for rec in candidates:
-        good_count, inliers = verify_orb(np_img, rec)
-        score = inliers * 2 + good_count
-        if score > best_score:
-            best_score = score
-            best = (rec, score, good_count, inliers)
-    return best
+        if len(m_n) == 2:
+            m, n = m_n
+            if m.distance < ratio * n.distance:
+                good.append(m)
+    return (len(good) >= min_good), len(good)

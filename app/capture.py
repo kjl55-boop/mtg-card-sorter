@@ -1,61 +1,43 @@
 """
-Camera interface module.
-Provides a simple abstraction for Picamera2 (and fallback to OpenCV VideoCapture for desktop testing).
+Capture helper wrappers and debug saving.
+
+Expose:
+ - capture_frame(cam) -> BGR frame (wrapper around OpenCV VideoCapture)
+ - normalize_and_save(frame, filename) -> saved Path
+ - compute_phash_bgr(frame) -> hex string
 """
 
-import cv2
-from typing import Any, Tuple
 from pathlib import Path
-from app import config, utils
+import cv2
+from PIL import Image
+import imagehash
+from .crop import normalize_card_image
+from .config import DEBUG_DIR, NORMALIZED_SIZE
+import numpy as np
 
-try:
-    from picamera2 import Picamera2
-    from libcamera import controls
-    HAVE_PICAM = True
-except Exception:
-    HAVE_PICAM = False
+DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+OUT_W, OUT_H = NORMALIZED_SIZE
 
-def init_camera(preview_size=None):
-    """Return a camera handle. Use Picamera2 when available, otherwise fallback to cv2.VideoCapture(0)."""
-    preview_size = preview_size or config.CAMERA_PREVIEW_SIZE
-    if HAVE_PICAM:
-        cam = Picamera2()
-        config_obj = cam.create_preview_configuration(main={"size": preview_size})
-        cam.configure(config_obj)
-        try:
-            cam.set_controls({
-                "AfMode": controls.AfModeEnum.Continuous,
-                "AwbEnable": True
-            })
-        except Exception:
-            pass
-        cam.start()
-        return ("picamera2", cam)
-    else:
-        cap = cv2.VideoCapture(0)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, preview_size[0])
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, preview_size[1])
-        return ("opencv", cap)
 
-def grab_frame(cam_handle):
-    """Return a BGR numpy array frame from camera handle returned by init_camera."""
-    kind, cam = cam_handle
-    if kind == "picamera2":
-        arr = cam.capture_array()
-        # Picamera2 returns RGB ndarray
-        return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-    else:
-        ret, frame = cam.read()
-        if not ret:
-            raise RuntimeError("Failed to read frame from OpenCV capture")
-        return frame
+def capture_frame(cam_index: int = 0, timeout: float = 2.0):
+    cap = cv2.VideoCapture(cam_index)
+    if not cap.isOpened():
+        cap.release()
+        raise RuntimeError(f"Failed to open camera index {cam_index}")
+    ret, frame = cap.read()
+    cap.release()
+    if not ret or frame is None:
+        raise RuntimeError("Failed to read frame from OpenCV capture")
+    return frame
 
-def close_camera(cam_handle):
-    kind, cam = cam_handle
-    if kind == "picamera2":
-        try:
-            cam.stop()
-        except Exception:
-            pass
-    else:
-        cam.release()
+
+def normalize_and_save(frame_bgr: np.ndarray, filename: str) -> Path:
+    norm = normalize_card_image(frame_bgr, size=(OUT_W, OUT_H))
+    p = Path(DEBUG_DIR) / filename
+    cv2.imwrite(str(p), norm)
+    return p
+
+
+def compute_phash_bgr(frame_bgr: np.ndarray) -> str:
+    img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    return str(imagehash.phash(Image.fromarray(img_rgb)))
