@@ -1,186 +1,159 @@
-#!/usr/bin/env python3
 """
-Live inspector with toggleable controls window.
+Interactive inspector UI
 
-Keys:
-  c  - capture preview (crop, snippets, try match)
-  s  - save current crop to debug dir
-  m  - toggle controls window (open/close)
-  q  - quit
+- Shows live preview from capture_frame
+- Trackbars to tweak detection: canny low/high, poly_eps_scale, min_area
+- Press S to save the current normalized crop to data/debug/<timestamp>.png
+- Press M to compute phash and run matcher verification for the current frame
+- Press Q or ESC to quit
 """
-import cv2
 import time
+import cv2
 from pathlib import Path
-from app import capture, crop, matcher, config, utils, ocr
+from datetime import datetime
+from .capture import capture_frame, normalize_and_save, compute_phash_bgr
+from .crop import normalize_card_image
+from .matcher import load_db_phashes, top_phash_candidates, verify_candidate_orb
+from .config import NORMALIZED_SIZE, PHASH_STRICT_THRESHOLD, PHASH_RELAXED_THRESHOLD
+import numpy as np
 
-# --- Controls defaults (sync with config but adjustable at runtime) ----------
+DEBUG_DIR = Path("data/debug")
+DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+
+# default detection params (these mirror values in app/crop but are adjustable here)
 DEFAULTS = {
-    "pad_x_pct": 0,        # repurposed default; will be overwritten
-    "pad_y_pct": 0,
-    "min_area": 5000,
-    "top_pct": int(config.DEFAULT_TOP_PCT * 100),
-    "mid_start_pct": int(config.DEFAULT_MID_START_PCT * 100),
-    "mid_end_pct": int(config.DEFAULT_MID_END_PCT * 100),
-    "bot_pct": int(config.DEFAULT_BOTTOM_PCT * 100),
-    "display_scale": int(config.DISPLAY_SCALE * 100)
+    "canny_low": 50,
+    "canny_high": 150,
+    "poly_eps_scale": 2,   # trackbar value; actual eps = scale/100 * peri (converted below)
+    "min_area": 2000
 }
 
-CONTROLS_WIN = "Controls"
+WIN = "Inspector"
+cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
 
-def create_controls():
-    cv2.namedWindow(CONTROLS_WIN, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(CONTROLS_WIN, 700, 220)
-    cv2.createTrackbar("Pad X %", CONTROLS_WIN, DEFAULTS["pad_x_pct"], 50, lambda x: None)
-    cv2.createTrackbar("Pad Y %", CONTROLS_WIN, DEFAULTS["pad_y_pct"], 50, lambda x: None)
-    cv2.createTrackbar("Min Area", CONTROLS_WIN, DEFAULTS["min_area"], 20000, lambda x: None)
-    cv2.createTrackbar("Top %", CONTROLS_WIN, DEFAULTS["top_pct"], 40, lambda x: None)
-    cv2.createTrackbar("Mid Start %", CONTROLS_WIN, DEFAULTS["mid_start_pct"], 70, lambda x: None)
-    cv2.createTrackbar("Mid End %", CONTROLS_WIN, DEFAULTS["mid_end_pct"], 90, lambda x: None)
-    cv2.createTrackbar("Bot %", CONTROLS_WIN, DEFAULTS["bot_pct"], 95, lambda x: None)
-    cv2.createTrackbar("Display %", CONTROLS_WIN, DEFAULTS["display_scale"], 100, lambda x: None)
+# create trackbars for runtime tuning
+cv2.createTrackbar("canny_low", WIN, DEFAULTS["canny_low"], 300, lambda v: None)
+cv2.createTrackbar("canny_high", WIN, DEFAULTS["canny_high"], 400, lambda v: None)
+cv2.createTrackbar("poly_eps_scale", WIN, DEFAULTS["poly_eps_scale"], 50, lambda v: None)
+cv2.createTrackbar("min_area", WIN, DEFAULTS["min_area"], 20000, lambda v: None)
+cv2.createTrackbar("show_norm", WIN, 1, 1, lambda v: None)   # 1 = show normalized crop, 0 = show raw frame
 
-def destroy_controls():
-    try:
-        cv2.destroyWindow(CONTROLS_WIN)
-    except Exception:
-        pass
+def _read_trackbars():
+    cl = cv2.getTrackbarPos("canny_low", WIN)
+    ch = cv2.getTrackbarPos("canny_high", WIN)
+    eps_scale = cv2.getTrackbarPos("poly_eps_scale", WIN)
+    min_area = cv2.getTrackbarPos("min_area", WIN)
+    show_norm = bool(cv2.getTrackbarPos("show_norm", WIN))
+    return cl, ch, max(1, eps_scale), max(100, min_area), show_norm
 
-def controls_open():
-    return CONTROLS_WIN in cv2.getWindowProperty.__self__.__dict__ if False else (cv2.getWindowProperty(CONTROLS_WIN, 0) >= 0 if cv2.getWindowProperty(CONTROLS_WIN, 0) is not None else False)
+# small helper to run the same normalization as app.crop but using runtime params
+def runtime_normalize(frame_bgr, out_size=tuple(NORMALIZED_SIZE), canny_low=50, canny_high=150, eps_scale=2, min_area=2000):
+    import numpy as np
+    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5,5), 0)
+    edged = cv2.Canny(blurred, canny_low, canny_high)
+    contours, _ = cv2.findContours(edged, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)
+        for c in contours[:20]:
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, eps_scale/100.0 * peri, True)
+            if len(approx) == 4 and cv2.contourArea(approx) > min_area:
+                pts = approx.reshape(4,2).astype("float32")
+                # order points (tl,tr,br,bl)
+                s = pts.sum(axis=1); diff = np.diff(pts, axis=1)
+                rect = np.zeros((4,2), dtype="float32")
+                rect[0] = pts[np.argmin(s)]
+                rect[2] = pts[np.argmax(s)]
+                rect[1] = pts[np.argmin(diff)]
+                rect[3] = pts[np.argmax(diff)]
+                dst = np.array([[0,0],[out_size[0]-1,0],[out_size[0]-1,out_size[1]-1],[0,out_size[1]-1]], dtype="float32")
+                M = cv2.getPerspectiveTransform(rect, dst)
+                warped = cv2.warpPerspective(frame_bgr, M, out_size)
+                return warped, approx, edged
+    # fallback: center-crop and resize
+    H, W = frame_bgr.shape[:2]
+    target_ratio = out_size[0] / out_size[1]
+    current_ratio = W / H
+    if current_ratio > target_ratio:
+        new_w = int(target_ratio * H)
+        x0 = max(0, (W - new_w)//2)
+        crop = frame_bgr[:, x0:x0+new_w]
+    else:
+        new_h = int(W / target_ratio)
+        y0 = max(0, (H - new_h)//2)
+        crop = frame_bgr[y0:y0+new_h, :]
+    resized = cv2.resize(crop, out_size, interpolation=cv2.INTER_AREA)
+    return resized, None, edged if 'edged' in locals() else None
 
-def read_controls():
-    """Read trackbar values and return a dict with normalized floats where appropriate."""
-    pad_x = cv2.getTrackbarPos("Pad X %", CONTROLS_WIN) / 100.0
-    pad_y = cv2.getTrackbarPos("Pad Y %", CONTROLS_WIN) / 100.0
-    min_area = max(100, cv2.getTrackbarPos("Min Area", CONTROLS_WIN))
-    top_pct = cv2.getTrackbarPos("Top %", CONTROLS_WIN) / 100.0
-    mid_start = cv2.getTrackbarPos("Mid Start %", CONTROLS_WIN) / 100.0
-    mid_end = cv2.getTrackbarPos("Mid End %", CONTROLS_WIN) / 100.0
-    bot_pct = cv2.getTrackbarPos("Bot %", CONTROLS_WIN) / 100.0
-    display_scale = max(10, cv2.getTrackbarPos("Display %", CONTROLS_WIN)) / 100.0
-    return {
-        "pad_x": pad_x,
-        "pad_y": pad_y,
-        "min_area": min_area,
-        "top_pct": top_pct,
-        "mid_start": mid_start,
-        "mid_end": mid_end,
-        "bot_pct": bot_pct,
-        "display_scale": display_scale
-    }
+def overlay_text(img, lines, pos=(10,20), line_height=18):
+    x,y = pos
+    for i,l in enumerate(lines):
+        cv2.putText(img, l, (x, y + i*line_height), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1, cv2.LINE_AA)
 
-def overlay_text(img, text, org=(10,30), color=(0,255,0)):
-    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-
-def run(debug_dir="data/debug", tesseract_config=None):
-    utils.ensure_dir(debug_dir)
-    cam = capture.init_camera(config.CAMERA_PREVIEW_SIZE)
-    tesseract_config = tesseract_config or config.TESSERACT_CONFIG_SNIPPET
-
-    controls_visible = False
-
-    try:
-        while True:
-            frame = capture.grab_frame(cam)
-            # dynamic min_area: if controls open, use that; otherwise use default
-            if controls_visible:
-                ctrl = read_controls()
-                min_area = ctrl["min_area"]
-                display_scale = ctrl["display_scale"]
-            else:
-                min_area = 5000
-                display_scale = config.DISPLAY_SCALE
-
-            box, contour = crop.find_card_contour(frame, min_area=min_area)
-            vis = frame.copy()
-            if box is not None:
-                cv2.drawContours(vis, [box], -1, (0,0,255), 3)
-
-            preview = cv2.resize(vis, (0,0), fx=display_scale, fy=display_scale)
-            cv2.imshow("Live", preview)
-            key = cv2.waitKey(1) & 0xFF
-
-            # toggle controls window
-            if key == ord("m"):
-                controls_visible = not controls_visible
-                if controls_visible:
-                    create_controls()
-                else:
-                    destroy_controls()
-
-            if key == ord("q"):
-                break
-
-            if key == ord("c") and box is not None:
-                # read current control params for cropping
-                if controls_visible:
-                    c = read_controls()
-                    pad_x = c["pad_x"]
-                    pad_y = c["pad_y"]
-                    top_pct = c["top_pct"]
-                    mid_start = c["mid_start"]
-                    mid_end = c["mid_end"]
-                    bot_pct = c["bot_pct"]
-                else:
-                    pad_x = 0.0
-                    pad_y = 0.0
-                    top_pct = config.DEFAULT_TOP_PCT
-                    mid_start = config.DEFAULT_MID_START_PCT
-                    mid_end = config.DEFAULT_MID_END_PCT
-                    bot_pct = config.DEFAULT_BOTTOM_PCT
-
-                card = crop.crop_card_from_box(frame, box, pad_x_pct=pad_x, pad_y_pct=pad_y)
-                if card is None or card.size == 0:
-                    print("Crop failed")
-                    continue
-
-                # show card and snippets
-                snippets = crop.extract_snippets(card, top_pct, mid_start, mid_end, bot_pct)
-                cv2.imshow("Card", cv2.resize(card, (0,0), fx=0.5, fy=0.5))
-                for (label, snip) in snippets:
-                    cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0,0), fx=0.6, fy=0.6))
-
-                # try matcher (DB may not exist; function may return None)
-                res = None
-                try:
-                    res = matcher.match_card(card)
-                except FileNotFoundError as e:
-                    # DB not found; will run OCR fallback
-                    print("Matcher DB missing:", e)
-
-                if res:
-                    rec, score, good, inl = res
-                    print("MATCH:", rec["name"], rec["set_code"], rec["collector_number"], "score", score)
-                    overlay_text(card, f"{rec['name']} [{score}]", org=(10,40))
-                    cv2.imshow("Card", cv2.resize(card, (0,0), fx=0.5, fy=0.5))
-                else:
-                    print("No match; running OCR fallback")
-                    title_crop = ocr.crop_title_band(card, init_top_pct=top_pct)
-                    p = ocr.preprocess_for_ocr(title_crop)
-                    t, conf = ocr.ocr_image(p, config=config.TESSERACT_CONFIG_TITLE)
-                    print("OCR title:", t, "conf", conf)
-
-            if key == ord("s") and box is not None:
-                ts = int(time.time())
-                if controls_visible:
-                    pad_x = read_controls()["pad_x"]
-                    pad_y = read_controls()["pad_y"]
-                else:
-                    pad_x = 0.08
-                    pad_y = 0.08
-                card = crop.crop_card_from_box(frame, box, pad_x_pct=pad_x, pad_y_pct=pad_y)
-                Path(debug_dir).mkdir(parents=True, exist_ok=True)
-                cv2.imwrite(str(Path(debug_dir) / f"{ts}_card.png"), card)
-                print("Saved", ts)
-
-    finally:
-        capture.close_camera(cam)
-        # Ensure controls window destroyed cleanly
+def main_loop(cam_index=0):
+    print("Interactive inspector: S=save, M=match, Q/ESC=quit")
+    last_match_info = ""
+    while True:
         try:
-            destroy_controls()
-        except Exception:
-            pass
-        cv2.destroyAllWindows()
+            frame = capture_frame(cam_index)
+        except Exception as e:
+            overlay = np.zeros((200,400,3), dtype=np.uint8)
+            overlay_text(overlay, ["capture error: " + str(e)])
+            cv2.imshow(WIN, overlay)
+            key = cv2.waitKey(1000) & 0xFF
+            if key in (ord('q'), 27):
+                break
+            continue
 
-if __name__ == "__main__":
-    run()
+        cl, ch, eps_scale, min_area, show_norm = _read_trackbars()
+        norm, approx, edged = runtime_normalize(frame, out_size=tuple(NORMALIZED_SIZE),
+                                                canny_low=cl, canny_high=ch,
+                                                eps_scale=eps_scale, min_area=min_area)
+        display = norm if show_norm else frame.copy()
+
+        # overlay status
+        lines = [
+            f"canny {cl}/{ch} eps_scale {eps_scale} min_area {min_area}",
+            "S=save  M=match  Q=quit",
+            last_match_info
+        ]
+        overlay_text(display, lines)
+
+        # if found quad, draw it on display (small indicator)
+        if approx is not None and not show_norm:
+            cv2.polylines(display, [approx], True, (0,255,0), 2)
+
+        cv2.imshow(WIN, display)
+        key = cv2.waitKey(1) & 0xFF
+
+        if key == ord('s'):
+            fname = datetime.now().strftime("capture_%Y%m%dT%H%M%S.png")
+            saved = normalize_and_save(norm, fname)
+            print("Saved normalized crop to", saved)
+            last_match_info = f"Saved {fname}"
+        elif key == ord('m'):
+            # compute phash and run matching flow on current normalized crop
+            ph = compute_phash_bgr(norm)
+            print("Query phash:", ph)
+            rows = load_db_phashes()
+            if not rows:
+                print("No phashes in DB")
+                last_match_info = "No DB phash"
+                continue
+            cands = top_phash_candidates(ph, rows, top_n=10)
+            if not cands:
+                print("No phash candidates")
+                last_match_info = "No phash cands"
+                continue
+            d0, cid0, name0, ph0, desc0 = cands[0]
+            print(f"Top phash h={d0} id={cid0} name={name0}")
+            matched = False
+            if d0 <= PHASH_STRICT_THRESHOLD:
+                print("Strict accept:", cid0, name0)
+                last_match_info = f"ACCEPT {name0} (h={d0})"
+                matched = True
+            else:
+                for d, cid, name, phx, desc in cands:
+                    desc_path = Path("data/scryfall_db/descriptors") / (desc if desc else f"{cid}.npz")
+                    ok, good = verify_candidate_orb(norm
