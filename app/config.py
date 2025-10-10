@@ -1,39 +1,36 @@
 """
-Configuration constants for the project.
-Edit values here to tune behavior across modules.
+Central configuration used across capture, crop, matcher, and run_inspector.
 """
-
 from pathlib import Path
+from typing import Tuple
 
-# Paths
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
-SCRYFALL_RAW = DATA_DIR / "raw_scryfall"
-SCRYFALL_DB = DATA_DIR / "scryfall_db"
-SCRYFALL_DB.mkdir(parents=True, exist_ok=True)
+SCRYFALL_DIR = DATA_DIR / "scryfall_db"
+DESCRIPTORS_DIR = SCRYFALL_DIR / "descriptors"
+DEBUG_DIR = DATA_DIR / "debug"
+RESULTS_DIR = ROOT / "results"
+LOGS_DIR = ROOT / "logs"
 
-# DB files (builder will create these)
-DB_PATH = SCRYFALL_DB / "cards.db"
-DESC_DIR = SCRYFALL_DB / "descriptors"
+# Normalized crop size (width, height)
+NORMALIZED_SIZE: Tuple[int, int] = (400, 560)
 
-# Camera / image sizes
-CAMERA_PREVIEW_SIZE = (2304, 1296)  # (width, height)
-DISPLAY_SCALE = 0.5                 # scale for GUI preview
+# PHASH thresholds
+PHASH_STRICT_THRESHOLD = 6
+PHASH_RELAXED_THRESHOLD = 8
+PHASH_CANDIDATE_THRESHOLD = 12
 
-# ORB / hashing
-ORB_FEATURES = 1200
-PHASH_HAMMING_THRESHOLD = 6
-MATCH_TOP_K = 12
+# Descriptor verification parameters (ORB)
+DESCRIPTOR_MIN_GOOD_MATCHES = 10
+DESCRIPTOR_RATIO_TEST = 0.75
 
-# Crop/snippet defaults (fractions of card height)
-DEFAULT_TOP_PCT = 0.12
-DEFAULT_MID_START_PCT = 0.55
-DEFAULT_MID_END_PCT = 0.63
-DEFAULT_BOTTOM_PCT = 0.78
+# I/O limits
+PHASH_TOP_N_CANDIDATES = 10
 
-# OCR defaults
-TESSERACT_CONFIG_TITLE = "--oem 1 --psm 7"
-TESSERACT_CONFIG_SNIPPET = "--oem 1 --psm 6"
+# Camera defaults (last-good settings)
+CAMERA_PREVIEW_SIZE = (1280, 720)
+CAMERA_WARMUP_SEC = 0.25
 
-# Misc
-DEBUG = True
+# Ensure existence
+for p in (DATA_DIR, SCRYFALL_DIR, DESCRIPTORS_DIR, DEBUG_DIR, RESULTS_DIR, LOGS_DIR):
+    p.mkdir(parents=True, exist_ok=True)
