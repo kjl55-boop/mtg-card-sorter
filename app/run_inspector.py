@@ -122,8 +122,8 @@ def run(debug_dir="data/debug", tesseract_config=None):
                     mid_end = c["mid_end"]
                     bot_pct = c["bot_pct"]
                 else:
-                    pad_x = 0.08
-                    pad_y = 0.08
+                    pad_x = 0.0
+                    pad_y = 0.0
                     top_pct = config.DEFAULT_TOP_PCT
                     mid_start = config.DEFAULT_MID_START_PCT
                     mid_end = config.DEFAULT_MID_END_PCT
