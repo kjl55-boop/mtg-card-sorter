@@ -1,66 +1,102 @@
-# high_quality_capture.py
-from picamera2 import Picamera2, Preview
+# insert near the top of app/run_inspector.py with other imports
+from picamera2 import Picamera2
 from libcamera import controls
-import time, cv2, numpy as np, sys, os
-OUT = "/tmp/picam_high_quality.png"
+import time, cv2, os
 
-def high_quality_capture(target_size=(1920,1080), warmup=0.5, settle=0.5):
-    pc = Picamera2()
-    # Use still configuration for highest quality processing pipeline
-    still_cfg = pc.create_still_configuration(main={"size": target_size, "format": "RGB888"})
-    pc.configure(still_cfg)
-
-    # Helpful control choices; tune these for your lighting and sensor
-    default_controls = {
-        # let AE/AWB run initially; we'll optionally lock them below
-        "AfMode": controls.AfModeEnum.Continuous,
-        "AwbEnable": True,
-        # Noise reduction - use HighQuality if available
-        "NoiseReductionMode": controls.draft.NoiseReductionModeEnum.HighQuality,
-        # Sharpening/contrast are sensor/IPA dependent
-        "Sharpness": 2.0,
-        "Contrast": 1.0,
-        "Saturation": 1.0,
-    }
+# High-quality capture helper
+def high_quality_capture_and_save(out_path: str, target_size=(1920,1080),
+                                  warmup=0.6, settle=0.4,
+                                  lock_awb=False, colour_gains=None,
+                                  prefer_xbgr=True):
+    """
+    Temporarily switch Picamera2 to a still/high-quality config, capture, save as a BGR PNG,
+    then return True on success.
+    - out_path: full path to PNG to write
+    - target_size: desired still resolution
+    - lock_awb: if True, disable AWB after warmup and set colour_gains (tuple red,blue)
+    - colour_gains: (red_gain, blue_gain) used if lock_awb True
+    - prefer_xbgr: try XBGR8888 pipeline to avoid color conversion; fallback to RGB888 -> cvtColor
+    """
+    pc = None
     try:
-        pc.set_controls(default_controls)
-    except Exception:
-        pass
+        pc = Picamera2()
+        # Try XBGR first if requested (some IPAs support it natively)
+        if prefer_xbgr:
+            try:
+                cfg = pc.create_still_configuration(main={"size": target_size, "format": "XBGR8888"})
+                pc.configure(cfg)
+            except Exception:
+                cfg = pc.create_still_configuration(main={"size": target_size, "format": "RGB888"})
+                pc.configure(cfg)
+        else:
+            cfg = pc.create_still_configuration(main={"size": target_size, "format": "RGB888"})
+            pc.configure(cfg)
 
-    pc.start()
-    try:
-        # warm up auto-exposure/auto-whitebalance
+        pc.start()
+        # let AE/AWB warm up
         time.sleep(warmup)
-        # let AE/AWB settle a bit more for still exposure
+        # optionally lock AWB and set manual colour gains for repeatable neutral white
+        if lock_awb:
+            cg = colour_gains if colour_gains is not None else (1.15, 1.0)
+            try:
+                # Disable AWB and set manual ColourGains (red_gain, blue_gain)
+                pc.set_controls({"AwbEnable": False, "ColourGains": cg})
+                time.sleep(0.05)
+            except Exception:
+                pass
+
+        # let pipeline settle a bit if requested
         time.sleep(settle)
 
-        # Optionally read current AE/AWB and lock them for repeatable captures:
-        # info = pc.capture_metadata()
-        # print("metadata sample:", info)
-        # To lock AE/AWB (uncomment if you want fixed settings):
-        # current_controls = {"AeEnable": False, "AwbEnable": False}
-        # pc.set_controls(current_controls)
-
         arr = pc.capture_array()
-        # Picamera2 still config yields RGB array; convert to BGR for OpenCV
         if arr is None:
-            print("capture_array returned None", file=sys.stderr)
-            return 2
-        bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+            return False, "capture_array returned None"
 
-        # Optional: mild denoise + sharpening using OpenCV (tune or remove if unwanted)
-        denoised = cv2.fastNlMeansDenoisingColored(bgr, None, 6, 6, 7, 21)
-        # sharpen kernel
-        kernel = np.array([[0,-1,0],[-1,5,-1],[0,-1,0]], dtype=np.float32)
-        sharp = cv2.filter2D(denoised, -1, kernel)
+        # If we captured XBGR8888, arr is likely in BGR ordering already; detect by dtype/shape
+        # Heuristic: check channel means — if red mean is much lower than blue mean, we still convert from RGB->BGR
+        try:
+            r_mean = int(arr[:,:,0].mean())
+            b_mean = int(arr[:,:,2].mean())
+        except Exception:
+            r_mean = b_mean = 0
 
-        cv2.imwrite(OUT, sharp)
-        print("Wrote:", OUT)
+        wrote = False
+        # If we configured XBGR and arr shape is 4 channels, drop alpha if present
+        if arr.ndim == 3 and arr.shape[2] == 4:
+            # assume XBGR ordering; OpenCV expects BGR so write directly after dropping alpha
+            bgr = arr[:, :, :3]  # X B G R or X R G B depending on pipeline; if wrong, fallback below
+            # Verify by quick channel-check heuristic and convert if needed
+            try:
+                # if R mean much less than B mean, convert RGB->BGR
+                if r_mean < b_mean:
+                    # assume arr is RGB888-like even if 4 channels; convert using cvtColor if possible
+                    bgr = cv2.cvtColor(arr[:,:,:3], cv2.COLOR_RGB2BGR)
+                cv2.imwrite(out_path, bgr)
+                wrote = True
+            except Exception:
+                pass
+
+        if not wrote:
+            # Most consistent path: assume RGB888 and convert to BGR for OpenCV
+            try:
+                if arr.ndim == 3 and arr.shape[2] >= 3:
+                    bgr = cv2.cvtColor(arr[:,:,:3], cv2.COLOR_RGB2BGR)
+                    cv2.imwrite(out_path, bgr)
+                    wrote = True
+                else:
+                    # fallback: save raw bytes using numpy
+                    import numpy as np
+                    cv2.imwrite(out_path, np.ascontiguousarray(arr))
+                    wrote = True
+            except Exception as e:
+                return False, f"save failed: {e}"
+
+        return wrote, out_path
+    except Exception as ex:
+        return False, str(ex)
     finally:
         try:
-            pc.stop()
+            if pc is not None:
+                pc.stop()
         except Exception:
             pass
-
-if __name__ == "__main__":
-    sys.exit(high_quality_capture())
