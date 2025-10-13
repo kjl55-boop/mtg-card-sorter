@@ -49,7 +49,7 @@ OUT_FILE = "out.jpg"
 BEST_FILE = "best.jpg"
 PREVIEW_SIZE = (2304,1296)#(1280, 720)
 FOCUS_STEP = 10
-FOCUS_BASELINE = 100
+FOCUS_BASELINE = 1000
 
 # Multishot defaults (adjustable from preview)
 MULTISHOT_N = 8
