@@ -190,45 +190,6 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                         log.info("Saved card to %s", p)
                     else:
                         log.warning("Failed to save card to %s", p)
-
-            # restore auto modes
-            if key == ord("u"):
-                ok_af = cam.set_auto_focus(True)
-                ok_awb = cam.set_auto_white_balance(True)
-                if ok_af or ok_awb:
-                    log.info("Restored autofocus=%s awb=%s", ok_af, ok_awb)
-                else:
-                    log.warning("Restore auto modes: not supported by backend")
-
-            # attempt to lock focus (existing)
-            if key == ord("f"):
-                if cam.lock_focus(roi=None, wait_sec=1.0):
-                    log.info("Lock focus attempt succeeded")
-                else:
-                    log.warning("Lock focus attempt failed; using default auto focus instead")
-
-            # bias to card and try lock (existing)
-            # inside main loop key handling where `frame` and `box` are available
-            if key == ord("b"):
-                if box is None:
-                    log.warning("No card box available to bias focus")
-                else:
-                    # box expected as iterable of four (x,y) points
-                    xs = [int(pt[0]) for pt in box]
-                    ys = [int(pt[1]) for pt in box]
-                    x0, y0 = max(0, min(xs)), max(0, min(ys))
-                    x1, y1 = min(frame.shape[1], max(xs)), min(frame.shape[0], max(ys))
-                    w_box = max(1, x1 - x0)
-                    h_box = max(1, y1 - y0)
-                    roi_norm = (x0 / frame.shape[1], y0 / frame.shape[0], w_box / frame.shape[1], h_box / frame.shape[0])
-                    # try to lock focus on the card ROI
-                    if cam.lock_focus(roi=roi_norm, wait_sec=1.0):
-                        log.info("Focus locked on card ROI %s", roi_norm)
-                    else:
-                        log.warning("Failed to lock focus on card ROI; camera may not support software AF controls")
-
-
-
     finally:
         try:
             capture.close_camera(cam)
