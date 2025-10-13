@@ -23,6 +23,8 @@ Keybindings (preview window):
   - : decrease focus_absolute by step (v4l2)
   0 : reset focus_absolute to baseline
   h : print help
+  t : apply tuned preview controls (AfMode Continuous, AWB on, HighQuality NR, Sharpness, Contrast, Saturation)
+  r : revert tuned controls (attempt safe defaults / re-enable AWB/AF continuous)
 """
 import shlex
 import subprocess
@@ -49,7 +51,7 @@ OUT_FILE = "out.jpg"
 BEST_FILE = "best.jpg"
 PREVIEW_SIZE = (2304,1296)#(1280, 720)
 FOCUS_STEP = 10
-FOCUS_BASELINE = 1000
+FOCUS_BASELINE = 100
 
 # Multishot defaults (adjustable from preview)
 MULTISHOT_N = 8
@@ -152,6 +154,124 @@ def start_picamera2(preview_size=PREVIEW_SIZE, warmup=0.2):
             pass
         return None
 
+# --- add near other Picamera2 helpers ---
+def apply_picamera2_tuned_controls(pc2):
+    """Best-effort: set tuned preview controls on Picamera2 instance."""
+    if pc2 is None:
+        print("Picamera2 not available; cannot apply tuned controls")
+        return False
+    try:
+        from picamera2 import controls as pc2_controls
+    except Exception:
+        pc2_controls = None
+
+    # Try to (re)configure preview size first if desired
+    try:
+        cfg = pc2.create_preview_configuration({"size": PREVIEW_SIZE})
+        pc2.configure(cfg)
+        pc2.start()
+    except Exception:
+        # If reconfigure/start fails, continue and try to set controls on running pc2
+        pass
+
+    ctrl_payload = {}
+    # AF mode
+    try:
+        if pc2_controls and hasattr(pc2_controls, "AfModeEnum"):
+            enum = pc2_controls.AfModeEnum
+            if hasattr(enum, "Continuous"):
+                ctrl_payload["AfMode"] = enum.Continuous
+            elif hasattr(enum, "Auto"):
+                ctrl_payload["AfMode"] = enum.Auto
+    except Exception as exc:
+        print("AF enum handling failed:", exc)
+
+    # AWB
+    try:
+        # prefer AwbModeEnum.Auto, else try simple boolean key
+        if pc2_controls and hasattr(pc2_controls, "AwbModeEnum") and hasattr(pc2_controls.AwbModeEnum, "Auto"):
+            ctrl_payload["AwbMode"] = pc2_controls.AwbModeEnum.Auto
+        else:
+            ctrl_payload["AwbEnable"] = True
+    except Exception as exc:
+        print("AWB control handling failed:", exc)
+
+    # Noise reduction (some picamera2 builds expose draft namespace)
+    try:
+        nr_mode = None
+        if pc2_controls and hasattr(pc2_controls, "draft") and hasattr(pc2_controls.draft, "NoiseReductionModeEnum"):
+            nr_enum = pc2_controls.draft.NoiseReductionModeEnum
+            if hasattr(nr_enum, "HighQuality"):
+                nr_mode = nr_enum.HighQuality
+        if nr_mode is not None:
+            ctrl_payload["NoiseReductionMode"] = nr_mode
+    except Exception as exc:
+        print("Noise reduction handling failed:", exc)
+
+    # Simple numeric image-tuning controls (may or may not exist)
+    # Values from your example: Sharpness 2.0, Contrast 1.5, Saturation 1.5
+    for k, v in (("Sharpness", 2.0), ("Contrast", 1.5), ("Saturation", 1.5)):
+        try:
+            ctrl_payload[k] = v
+        except Exception:
+            pass
+
+    if not ctrl_payload:
+        print("No Picamera2 controls available to set")
+        return False
+
+    try:
+        pc2.set_controls(ctrl_payload)
+        print("Applied Picamera2 tuned controls:", ", ".join(ctrl_payload.keys()))
+        return True
+    except Exception as exc:
+        print("pc2.set_controls failed:", exc)
+        return False
+
+
+def revert_picamera2_controls(pc2):
+    """Best-effort: attempt to revert controls to safe defaults."""
+    if pc2 is None:
+        print("Picamera2 not available; cannot revert controls")
+        return False
+    try:
+        from picamera2 import controls as pc2_controls
+    except Exception:
+        pc2_controls = None
+
+    payload = {}
+    # Try to set AF back to continuous/auto if available
+    try:
+        if pc2_controls and hasattr(pc2_controls, "AfModeEnum"):
+            enum = pc2_controls.AfModeEnum
+            if hasattr(enum, "Continuous"):
+                payload["AfMode"] = enum.Continuous
+            elif hasattr(enum, "Auto"):
+                payload["AfMode"] = enum.Auto
+    except Exception:
+        pass
+
+    # Re-enable AWB
+    try:
+        if pc2_controls and hasattr(pc2_controls, "AwbModeEnum") and hasattr(pc2_controls.AwbModeEnum, "Auto"):
+            payload["AwbMode"] = pc2_controls.AwbModeEnum.Auto
+        else:
+            payload["AwbEnable"] = True
+    except Exception:
+        pass
+
+    # Reset numeric tuning to neutral values where sensible
+    for k, v in (("Sharpness", 0.0), ("Contrast", 1.0), ("Saturation", 1.0)):
+        payload[k] = v
+
+    try:
+        pc2.set_controls(payload)
+        print("Reverted Picamera2 controls to defaults")
+        return True
+    except Exception as exc:
+        print("Failed to revert controls:", exc)
+        return False
+
 
 def capture_and_save(frame, name=OUT_FILE):
     if frame is None:
@@ -239,6 +359,8 @@ def print_help():
         "  g : probe v4l2 controls for /dev/video0 (terminal)\n"
         "  a : toggle v4l2 autofocus (focus_auto)\n"
         "  + / - / 0 : v4l2 focus_absolute tweaks\n        h : print this help\n"
+        "  t : apply tuned preview controls (AfMode Continuous, AWB on, HighQuality NR, Sharpness, Contrast, Saturation)\n"
+        "  r : revert tuned controls (attempt safe defaults / re-enable AWB/AF continuous)\n"
     )
 
 
@@ -376,6 +498,14 @@ def main():
                 time.sleep(0.1)
             if key == ord("h"):
                 print_help()
+            if key == ord("t"):
+                # apply tuned controls
+                ok = apply_picamera2_tuned_controls(pc2 if use_pc2 else None)
+                print("Tuned controls applied?" , ok)
+            if key == ord("r"):
+                ok = revert_picamera2_controls(pc2 if use_pc2 else None)
+                print("Revert controls applied?", ok)
+
 
     finally:
         try:
