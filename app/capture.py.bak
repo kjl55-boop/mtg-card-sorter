@@ -1,4 +1,5 @@
-"""Persistent Camera abstraction with backend failover plus helper utilities.
+"""
+Persistent Camera abstraction with backend failover plus helper utilities.
 
 Public API:
 - Camera(...) : class for persistent usage
@@ -8,10 +9,6 @@ Public API:
 - capture_frame(cam_index=0, timeout=2.0) -> np.ndarray (single-shot convenience)
 - normalize_and_save(...)
 - compute_phash_bgr(...)
-
-This file includes robust autofocus helpers for picamera2 and OpenCV backends:
- - _probe_picamera2_controls() inspects available controls for diagnostics
- - set_autofocus(enabled), set_focus_roi(roi), lock_focus(...), unlock_focus()
 """
 from pathlib import Path
 import threading
@@ -20,6 +17,7 @@ import tempfile
 import subprocess
 import os
 import shutil
+from time import sleep
 from typing import Optional, Tuple
 
 import cv2
@@ -33,6 +31,8 @@ log = utils.get_logger("camera")
 from .crop import crop_card_from_box, find_card_contour
 from .config import CAMERA_PREVIEW_SIZE, CAMERA_WARMUP_SEC, NORMALIZED_SIZE, DEBUG_DIR
 
+from typing import Optional, Tuple
+
 # ensure debug dir exists
 Path(DEBUG_DIR).mkdir(parents=True, exist_ok=True)
 OUT_W, OUT_H = NORMALIZED_SIZE
@@ -45,7 +45,6 @@ class Camera:
     Persistent camera abstraction.
     Use start()/read()/stop() for lifecycle-managed capture.
     Optional background thread keeps latest frame for low-latency reads.
-    Includes autofocus helpers for supported backends.
     """
 
     def __init__(self, preview_size=CAMERA_PREVIEW_SIZE, warmup_sec=CAMERA_WARMUP_SEC,
@@ -77,8 +76,6 @@ class Camera:
             pc2.start()
             time.sleep(self.warmup_sec)
             self.backend_name = "picamera2"
-            self._handle = pc2
-            self._probe_picamera2_controls()
             log.info("Camera backend selected: picamera2")
             return pc2
         except Exception as exc:
@@ -110,7 +107,6 @@ class Camera:
         for _ in range(2):
             cap.read()
         self.backend_name = "opencv"
-        self._handle = cap
         log.info("Camera backend selected: opencv (V4L2)")
         return cap
 
@@ -212,45 +208,16 @@ class Camera:
             log.debug("Background thread stopped")
         try:
             if self.backend_name == "picamera2" and self._handle is not None:
-                try:
-                    self._handle.stop()
-                except Exception:
-                    pass
+                self._handle.stop()
             if self.backend_name == "opencv" and self._handle is not None:
-                try:
-                    self._handle.release()
-                except Exception:
-                    pass
+                self._handle.release()
             log.info("Camera backend stopped: %s", self.backend_name)
         except Exception as exc:
             utils.log_exception(log, exc, "Exception while stopping camera")
         self._handle = None
         self.backend_name = None
-
-    # ---------------- Picamera2 diagnostics / autofocus helpers ------------
-    def _probe_picamera2_controls(self):
-        """
-        Inspect and log Picamera2 control capabilities for debugging.
-        Call this after starting Picamera2 to see what control names are available.
-        """
-        try:
-            # Many Picamera2 instances expose get_controls() and a 'controls' mapping
-            get_controls = getattr(self._handle, "get_controls", None)
-            controls_attr = getattr(self._handle, "controls", None)
-            ctrl_keys = None
-            try:
-                if callable(get_controls):
-                    c = get_controls()
-                    if isinstance(c, dict):
-                        ctrl_keys = list(c.keys())
-                elif isinstance(controls_attr, dict):
-                    ctrl_keys = list(controls_attr.keys())
-            except Exception:
-                ctrl_keys = None
-            log.info("Picamera2 control probe: keys=%s", ctrl_keys)
-        except Exception as exc:
-            utils.log_exception(log, exc, "_probe_picamera2_controls failed")
-
+    
+    #Camera focus Utils
     def set_autofocus(self, enabled: bool) -> bool:
         """Enable or disable autofocus on supported backends. Returns True if action was attempted."""
         try:
@@ -259,34 +226,17 @@ class Camera:
                 ok = bool(self._handle.set(cv2.CAP_PROP_AUTOFOCUS, 1 if enabled else 0))
                 log.info("OpenCV autofocus set -> %s (ok=%s)", enabled, ok)
                 return ok
-
-                if self.backend_name == "picamera2" and self._handle is not None:
-                    try:
-                        from picamera2 import controls
-                        # Try to set common AfMode enums where available
-                        if enabled:
-                            # prefer Auto or Continuous if available
-                            if hasattr(controls, "AfModeEnum"):
-                                enum = controls.AfModeEnum
-                                for candidate in ("Auto", "Continuous", "AutoOnce"):
-                                    if hasattr(enum, candidate):
-                                        self._handle.set_controls({"AfMode": getattr(enum, candidate)})
-                                        log.debug("Picamera2 set AfMode -> %s", candidate)
-                                        return True
-                                # fallback to generic Auto if present
-                                if hasattr(enum, "Auto"):
-                                    self._handle.set_controls({"AfMode": enum.Auto})
-                                    return True
-                        else:
-                            if hasattr(controls, "AfModeEnum") and hasattr(controls.AfModeEnum, "Off"):
-                                self._handle.set_controls({"AfMode": controls.AfModeEnum.Off})
-                                log.debug("Picamera2 set AfMode -> Off")
-                                return True
-                    except Exception:
-                        log.debug("Picamera2 AfMode control not available or exception setting AfMode")
-                    log.debug("set_autofocus: no supported AfMode control for picamera2 backend")
+            if self.backend_name == "picamera2" and self._handle is not None:
+                try:
+                    from picamera2 import controls
+                    mode = controls.AfModeEnum.Auto if enabled else controls.AfModeEnum.Off
+                    self._handle.set_controls({"AfMode": mode})
+                    log.info("Picamera2 autofocus set -> %s", enabled)
+                    return True
+                except Exception:
+                    log.debug("Picamera2 autofocus control not available")
                     return False
-
+            # libcamera-jpeg or unknown backends: not supported here
             log.debug("Autofocus not implemented for backend=%s", self.backend_name)
             return False
         except Exception as exc:
@@ -300,25 +250,23 @@ class Camera:
         """
         try:
             if self.backend_name == "picamera2" and self._handle is not None:
+                # Picamera2 supports AfWin or AfRegion depending on driver; try common variants
                 try:
-                    # Try AfRegion or AfWin variants
+                    # AfRegion expects {'AfRegion': (x,y,w,h)} or AfWin variant in some versions
                     if roi is None:
                         self._handle.set_controls({"AfRegion": None})
-                        log.debug("Cleared Picamera2 AfRegion")
-                        return True
-                    x, y, w, h = (float(roi[0]), float(roi[1]), float(roi[2]), float(roi[3]))
-                    # Some drivers expect center/size instead of x,y,w,h; best-effort attempt
-                    try:
+                    else:
+                        x, y, w, h = roi
+                        # ensure values in 0..1
+                        x, y, w, h = float(x), float(y), float(w), float(h)
                         self._handle.set_controls({"AfRegion": (x, y, w, h)})
-                        log.info("Picamera2 focus ROI set -> %s", roi)
-                        return True
-                    except Exception:
-                        log.debug("Picamera2 AfRegion write failed")
-                        return False
+                    log.info("Picamera2 focus ROI set -> %s", roi)
+                    return True
                 except Exception:
                     log.debug("Picamera2 AfRegion/AfWin control not available; trying LensPosition bias")
                     return False
             if self.backend_name == "opencv" and self._handle is not None:
+                # OpenCV/V4L2 usually doesn't offer ROI AF via VideoCapture API; try v4l2-ctl externally if available
                 log.debug("OpenCV autofocus ROI not supported via cv2; use v4l2-ctl externally")
                 return False
             log.debug("Focus ROI not implemented for backend=%s", self.backend_name)
@@ -327,65 +275,27 @@ class Camera:
             utils.log_exception(log, exc, "set_focus_roi failed")
             return False
 
-    def lock_focus(self, roi: Optional[Tuple[float, float, float, float]] = None, wait_sec: float = 0.8) -> bool:
+    def lock_focus(self, roi: Optional[Tuple[float, float, float, float]] = None, wait_sec: float = 0.6) -> bool:
         """
         If supported: optionally bias AF to roi, enable AF briefly, wait, then disable AF to lock focus.
-        ROI is normalized (x,y,w,h) or None. Returns True if lock sequence was attempted and appears successful.
+        ROI is normalized (x,y,w,h) or None. Returns True if lock sequence was attempted.
         """
         try:
-            if self.backend_name == "picamera2" and self._handle is not None:
-                # bias AF if requested
-                if roi is not None:
-                    try:
-                        self.set_focus_roi(roi)
-                        time.sleep(0.05)
-                    except Exception:
-                        pass
-                    # enable AF to let driver converge
-                    enabled = self.set_autofocus(True)
-                    if not enabled:
-                        log.debug("lock_focus: cannot enable AfMode; will attempt lens-position fallback")
-                    time.sleep(wait_sec)
-
-                    # Try to disable AfMode first
-                    disabled = self.set_autofocus(False)
-                    if disabled:
-                        log.info("lock_focus: disabled AfMode to lock focus")
-                        return True
-
-                    # AfMode disable not supported; try lens position capture and re-apply
-                    try:
-                        current_lp = None
-                        get_controls = getattr(self._handle, "get_controls", None)
-                        if callable(get_controls):
-                            ctrls = get_controls()
-                            for key in ("LensPosition", "lens_position", "LensPositionManual"):
-                                if key in ctrls:
-                                    current_lp = ctrls[key]
-                                    break
-                        if current_lp is not None:
-                            try:
-                                self._handle.set_controls({"LensPosition": float(current_lp)})
-                                log.info("lock_focus: applied LensPosition=%s to lock focus", current_lp)
-                                return True
-                            except Exception:
-                                log.debug("Failed to set LensPosition to %s", current_lp)
-                    except Exception as exc:
-                        utils.log_exception(log, exc, "lock_focus lens position fallback failed")
-                    log.warning("lock_focus: unable to lock focus for picamera2 backend")
-                    return False
-
-            if self.backend_name == "opencv":
-                ok = self.set_autofocus(True)
-                time.sleep(wait_sec)
-                ok2 = self.set_autofocus(False)
-                if ok2:
-                    log.info("lock_focus: OpenCV AF locked")
-                    return True
-                log.warning("lock_focus: OpenCV AF disable failed")
-                return False
-
-            log.debug("lock_focus: unsupported backend=%s", self.backend_name)
+            # bias AF if requested
+            if roi is not None:
+                self.set_focus_roi(roi)
+                time.sleep(0.05)
+            # enable AF for adjustment
+            ok_enable = self.set_autofocus(True)
+            if not ok_enable:
+                log.debug("lock_focus: autofocus enable not supported")
+            time.sleep(wait_sec)
+            # disable AF to lock current lens position
+            ok_disable = self.set_autofocus(False)
+            if ok_disable:
+                log.info("Focus locked (backend=%s)", self.backend_name)
+                return True
+            log.warning("lock_focus: unable to disable autofocus after auto-adjust")
             return False
         except Exception as exc:
             utils.log_exception(log, exc, "lock_focus failed")
@@ -404,79 +314,80 @@ class Camera:
             utils.log_exception(log, exc, "unlock_focus failed")
             return False
 
-    # ---------------- convenience single-shot API (keeps existing callers working) ----
-    def capture_frame(cam_index: int = 0, timeout: float = 2.0) -> np.ndarray:
-        """
-        Single-shot convenience which tries backends in order. Raises RuntimeError on failure.
-        """
-        cam = Camera(preview_size=CAMERA_PREVIEW_SIZE, warmup_sec=CAMERA_WARMUP_SEC,
-                     use_background_thread=False, cam_index=cam_index)
-        cam.start()
-        try:
-            img = cam.read(timeout=timeout)
-            if img is None:
-                log.error("capture_frame: no frame captured")
-                raise RuntimeError("capture_frame: no frame captured")
-            return img
-        finally:
-            cam.stop()
 
-    # ---------------- compatibility wrappers for existing inspector ------------------
-    def init_camera(preview_size: Optional[tuple] = None):
-        c = Camera(preview_size=preview_size or CAMERA_PREVIEW_SIZE,
-                   warmup_sec=CAMERA_WARMUP_SEC,
-                   use_background_thread=True)
-        c.start()
-        return c
+# ---------------- convenience single-shot API (keeps existing callers working) ----
+def capture_frame(cam_index: int = 0, timeout: float = 2.0) -> np.ndarray:
+    """
+    Single-shot convenience which tries backends in order. Raises RuntimeError on failure.
+    """
+    cam = Camera(preview_size=CAMERA_PREVIEW_SIZE, warmup_sec=CAMERA_WARMUP_SEC,
+                 use_background_thread=False, cam_index=cam_index)
+    cam.start()
+    try:
+        img = cam.read(timeout=timeout)
+        if img is None:
+            log.error("capture_frame: no frame captured")
+            raise RuntimeError("capture_frame: no frame captured")
+        return img
+    finally:
+        cam.stop()
 
-    def grab_frame(cam, timeout: float = 1.0):
-        try:
-            return cam.read(timeout=timeout)
-        except Exception as exc:
-            utils.log_exception(log, exc, "grab_frame failed")
-            return None
+# ---------------- compatibility wrappers for existing inspector ------------------
+def init_camera(preview_size: Optional[tuple] = None):
+    c = Camera(preview_size=preview_size or CAMERA_PREVIEW_SIZE,
+               warmup_sec=CAMERA_WARMUP_SEC,
+               use_background_thread=True)
+    c.start()
+    return c
 
-    def close_camera(cam):
-        try:
-            cam.stop()
-        except Exception as exc:
-            utils.log_exception(log, exc, "close_camera failed")
+def grab_frame(cam, timeout: float = 1.0):
+    try:
+        return cam.read(timeout=timeout)
+    except Exception as exc:
+        utils.log_exception(log, exc, "grab_frame failed")
+        return None
 
-    # ---------------- helpers -----------------------------------------------------
-    def normalize_and_save(frame_bgr: np.ndarray, filename: str,
-                           pad_x_pct: float = 0.02, pad_y_pct: float = 0.02,
-                           min_area: int = 2000) -> Path:
-        """
-        Find the card in frame, deskew/crop using crop_card_from_box, resize to NORMALIZED_SIZE, and save to DEBUG_DIR.
-        Returns the saved Path or raises RuntimeError on failure.
-        """
-        if frame_bgr is None:
-            raise ValueError("normalize_and_save: input frame is None")
+def close_camera(cam):
+    try:
+        cam.stop()
+    except Exception as exc:
+        utils.log_exception(log, exc, "close_camera failed")
 
-        box, _ = find_card_contour(frame_bgr, min_area=min_area)
-        if box is None:
-            log.warning("normalize_and_save: no card contour found")
-            raise RuntimeError("normalize_and_save: no card contour found")
+# ---------------- helpers -----------------------------------------------------
+def normalize_and_save(frame_bgr: np.ndarray, filename: str,
+                       pad_x_pct: float = 0.02, pad_y_pct: float = 0.02,
+                       min_area: int = 2000) -> Path:
+    """
+    Find the card in frame, deskew/crop using crop_card_from_box, resize to NORMALIZED_SIZE, and save to DEBUG_DIR.
+    Returns the saved Path or raises RuntimeError on failure.
+    """
+    if frame_bgr is None:
+        raise ValueError("normalize_and_save: input frame is None")
 
-        card = crop_card_from_box(frame_bgr, box, pad_x_pct=pad_x_pct, pad_y_pct=pad_y_pct)
-        if card is None or card.size == 0:
-            log.warning("normalize_and_save: crop failed")
-            raise RuntimeError("normalize_and_save: crop failed")
+    box, _ = find_card_contour(frame_bgr, min_area=min_area)
+    if box is None:
+        log.warning("normalize_and_save: no card contour found")
+        raise RuntimeError("normalize_and_save: no card contour found")
 
-        norm = cv2.resize(card, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
-        p = Path(DEBUG_DIR) / filename
-        p.parent.mkdir(parents=True, exist_ok=True)
-        written = utils.safe_imwrite(str(p), norm)
-        if not written:
-            log.warning("Failed to write normalized image to %s", p)
-            raise RuntimeError(f"Failed to write normalized image to {p}")
-        log.info("Saved normalized image to %s", p)
-        return p
+    card = crop_card_from_box(frame_bgr, box, pad_x_pct=pad_x_pct, pad_y_pct=pad_y_pct)
+    if card is None or card.size == 0:
+        log.warning("normalize_and_save: crop failed")
+        raise RuntimeError("normalize_and_save: crop failed")
 
-    def compute_phash_bgr(frame_bgr: np.ndarray) -> str:
-        """
-        Compute perceptual hash (imagehash.phash) from an OpenCV BGR image and return hex string.
-        """
-        img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        pil = Image.fromarray(img_rgb)
-        return str(imagehash.phash(pil))
+    norm = cv2.resize(card, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
+    p = Path(DEBUG_DIR) / filename
+    p.parent.mkdir(parents=True, exist_ok=True)
+    written = utils.safe_imwrite(str(p), norm)
+    if not written:
+        log.warning("Failed to write normalized image to %s", p)
+        raise RuntimeError(f"Failed to write normalized image to {p}")
+    log.info("Saved normalized image to %s", p)
+    return p
+
+def compute_phash_bgr(frame_bgr: np.ndarray) -> str:
+    """
+    Compute perceptual hash (imagehash.phash) from an OpenCV BGR image and return hex string.
+    """
+    img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    pil = Image.fromarray(img_rgb)
+    return str(imagehash.phash(pil))
