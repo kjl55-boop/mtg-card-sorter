@@ -22,6 +22,9 @@ DEFAULT_MID_START_PCT = 0.55
 DEFAULT_MID_END_PCT = 0.63
 DEFAULT_BOTTOM_PCT = 0.78
 
+# normalized output size (width, height) used for saved/normalized card images
+NORMALIZED_SIZE = (256, 356)  # typical MTG card aspect ratio; change to (width, height) you prefer
+
 # Derived paths if needed
 SCRYFALL_DB_DIR = app_pkg.SCRYFALL_DIR
 DESCRIPTORS_DIR = app_pkg.DESCRIPTORS_DIR
