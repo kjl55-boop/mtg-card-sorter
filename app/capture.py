@@ -127,6 +127,16 @@ class Camera:
         if self._handle is None:
             log.error("No capture backend available")
             raise CameraError("No capture backend available")
+        # best-effort: enable autofocus and AWB so default auto modes are used
+        try:
+            self.set_auto_focus(True)
+        except Exception:
+            pass
+        try:
+            self.set_auto_white_balance(True)
+        except Exception:
+            pass
+
         self._running = True
         log.debug("Camera started with backend=%s", self.backend_name)
         if self.use_background_thread and self.backend_name != "libcamera-jpeg":
@@ -433,6 +443,80 @@ class Camera:
             log.info("No get_controls/controls attribute available on Picamera2 handle")
         except Exception as exc:
             utils.log_exception(log, exc, "dump_picamera2_controls failed")
+    
+    
+    def set_auto_focus(self, enabled: bool = True) -> bool:
+        """Best-effort: enable/leave autofocus on. Returns True if action attempted."""
+        try:
+            if self.backend_name == "opencv" and self._handle is not None:
+                ok = bool(self._handle.set(cv2.CAP_PROP_AUTOFOCUS, 1 if enabled else 0))
+                log.debug("OpenCV set_auto_focus -> %s (ok=%s)", enabled, ok)
+                return ok
+            if self.backend_name == "picamera2" and self._handle is not None:
+                try:
+                    from picamera2 import controls
+                    if enabled:
+                        # Try to enable a common AF enum; ignore failures
+                        if hasattr(controls, "AfModeEnum"):
+                            enum = controls.AfModeEnum
+                            for candidate in ("Continuous", "Auto", "AutoOnce"):
+                                if hasattr(enum, candidate):
+                                    self._handle.set_controls({"AfMode": getattr(enum, candidate)})
+                                    log.debug("Picamera2 set_auto_focus -> %s (mode=%s)", enabled, candidate)
+                                    return True
+                    else:
+                        if hasattr(controls, "AfModeEnum") and hasattr(controls.AfModeEnum, "Off"):
+                            self._handle.set_controls({"AfMode": controls.AfModeEnum.Off})
+                            return True
+                except Exception:
+                    log.debug("Picamera2 set_auto_focus control not available")
+                return False
+            return False
+        except Exception as exc:
+            utils.log_exception(log, exc, "set_auto_focus failed")
+            return False
+
+    def set_auto_white_balance(self, enabled: bool = True) -> bool:
+        """Best-effort: enable/disable AWB. Returns True if action attempted."""
+        try:
+            if self.backend_name == "picamera2" and self._handle is not None:
+                try:
+                    from picamera2 import controls
+                    # try typical AWB enum names
+                    if hasattr(controls, "AwbModeEnum"):
+                        enum = controls.AwbModeEnum
+                        if enabled and hasattr(enum, "Auto"):
+                            self._handle.set_controls({"AwbMode": enum.Auto})
+                            log.debug("Picamera2 AWB -> Auto")
+                            return True
+                        # turning AWB off may not be supported; skip if not available
+                    # some drivers accept simple boolean
+                    try:
+                        self._handle.set_controls({"AwbEnable": bool(enabled)})
+                        log.debug("Picamera2 AwbEnable -> %s", enabled)
+                        return True
+                    except Exception:
+                        pass
+                except Exception:
+                    log.debug("Picamera2 AWB controls not available")
+                return False
+            if self.backend_name == "opencv" and self._handle is not None:
+                # OpenCV may allow toggling via properties (driver-dependent)
+                try:
+                    ok = True
+                    # Some drivers use CAP_PROP_AUTO_WB or CAP_PROP_WHITE_BALANCE_BLUE_U
+                    if hasattr(cv2, "CAP_PROP_AUTO_WB"):
+                        ok = ok and bool(self._handle.set(cv2.CAP_PROP_AUTO_WB, 1 if enabled else 0))
+                    log.debug("OpenCV set_auto_white_balance -> %s (ok=%s)", enabled, ok)
+                    return ok
+                except Exception:
+                    log.debug("OpenCV AWB toggle not supported")
+                    return False
+            return False
+        except Exception as exc:
+            utils.log_exception(log, exc, "set_auto_white_balance failed")
+            return False
+
 
 
 # ---------------- convenience single-shot API and module helpers ----------------

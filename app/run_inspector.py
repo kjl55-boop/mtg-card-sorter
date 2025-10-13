@@ -191,38 +191,30 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                     else:
                         log.warning("Failed to save card to %s", p)
 
-            # 1) Lock focus centered on current view
-            if key == ord("f"):
-                # center ROI: small box around image center (normalized)
-                h, w = frame.shape[:2]
-                cx, cy = w / 2, h / 2
-                roi_w_px, roi_h_px = int(w * 0.4), int(h * 0.4)
-                x_px = max(0, cx - roi_w_px // 2); y_px = max(0, cy - roi_h_px // 2)
-                roi_norm = (x_px / w, y_px / h, roi_w_px / w, roi_h_px / h)
-                if cam.lock_focus(roi=roi_norm, wait_sec=0.6):
-                    log.info("Focus locked at center ROI %s", roi_norm)
-                else:
-                    log.warning("Failed to lock focus at center")
-
-            # 2) Unlock (re-enable autofocus)
+            # restore auto modes
             if key == ord("u"):
-                if cam.unlock_focus():
-                    log.info("Autofocus enabled")
+                ok_af = cam.set_auto_focus(True)
+                ok_awb = cam.set_auto_white_balance(True)
+                if ok_af or ok_awb:
+                    log.info("Restored autofocus=%s awb=%s", ok_af, ok_awb)
                 else:
-                    log.warning("Failed to enable autofocus")
+                    log.warning("Restore auto modes: not supported by backend")
 
-            # 3) Bias focus to the detected card box and lock (if box present)
-            if key == ord("b") and box is not None:
-                # convert box (4x2 points) to normalized bounding rect (x,y,w,h)
-                xs = [int(pt[0]) for pt in box]
-                ys = [int(pt[1]) for pt in box]
-                x0, y0, x1, y1 = max(0, min(xs)), max(0, min(ys)), min(frame.shape[1], max(xs)), min(frame.shape[0], max(ys))
-                w_box = max(1, x1 - x0); h_box = max(1, y1 - y0)
-                roi_norm = (x0 / frame.shape[1], y0 / frame.shape[0], w_box / frame.shape[1], h_box / frame.shape[0])
-                if cam.lock_focus(roi=roi_norm, wait_sec=0.6):
-                    log.info("Focus locked on card ROI %s", roi_norm)
+            # attempt to lock focus (existing)
+            if key == ord("f"):
+                if cam.lock_focus(roi=None, wait_sec=1.0):
+                    log.info("Lock focus attempt succeeded")
                 else:
-                    log.warning("Failed to lock focus on card ROI")
+                    log.warning("Lock focus attempt failed; using default auto focus instead")
+
+            # bias to card and try lock (existing)
+            if key == ord("b"):
+                # compute roi_norm from detected box as you previously had, then:
+                if cam.lock_focus(roi=roi_norm, wait_sec=1.0):
+                    log.info("Locked focus on card ROI")
+                else:
+                    log.warning("Failed to lock on card; camera will remain in auto focus")
+
 
     finally:
         try:
