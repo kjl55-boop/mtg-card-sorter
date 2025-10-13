@@ -9,6 +9,7 @@ import app as app_pkg
 # Camera / image sizes
 CAMERA_PREVIEW_SIZE = (2304, 1296)  # (width, height)
 DISPLAY_SCALE = 0.5                 # scale for GUI preview
+CAMERA_WARMUP_SEC = 0.5
 
 # ORB / hashing
 ORB_FEATURES = 1200
@@ -25,3 +26,4 @@ DEFAULT_BOTTOM_PCT = 0.78
 SCRYFALL_DB_DIR = app_pkg.SCRYFALL_DIR
 DESCRIPTORS_DIR = app_pkg.DESCRIPTORS_DIR
 DEBUG_DIR = app_pkg.DEBUG_DIR
+
