@@ -4,17 +4,7 @@ Edit values here to tune behavior across modules.
 """
 
 from pathlib import Path
-
-# Paths
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
-SCRYFALL_RAW = DATA_DIR / "raw_scryfall"
-SCRYFALL_DB = DATA_DIR / "scryfall_db"
-SCRYFALL_DB.mkdir(parents=True, exist_ok=True)
-
-# DB files (builder will create these)
-DB_PATH = SCRYFALL_DB / "cards.db"
-DESC_DIR = SCRYFALL_DB / "descriptors"
+import app as app_pkg
 
 # Camera / image sizes
 CAMERA_PREVIEW_SIZE = (2304, 1296)  # (width, height)
@@ -31,9 +21,7 @@ DEFAULT_MID_START_PCT = 0.55
 DEFAULT_MID_END_PCT = 0.63
 DEFAULT_BOTTOM_PCT = 0.78
 
-# OCR defaults
-TESSERACT_CONFIG_TITLE = "--oem 1 --psm 7"
-TESSERACT_CONFIG_SNIPPET = "--oem 1 --psm 6"
-
-# Misc
-DEBUG = True
+# Derived paths if needed
+SCRYFALL_DB_DIR = app_pkg.SCRYFALL_DIR
+DESCRIPTORS_DIR = app_pkg.DESCRIPTORS_DIR
+DEBUG_DIR = app_pkg.DEBUG_DIR

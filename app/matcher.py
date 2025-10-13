@@ -1,178 +1,222 @@
-# app/matcher.py
+"""
+High-level orchestrator that composes crop, preprocess, phash, and OCR modules
+and implements retry / fallback policy for card recognition.
+
+Public API:
+- Matcher(phash_index=None, preprocess_fn=None, ocr_fn=None, config=None)
+    - match_once(card_bgr) -> MatchResult | None
+    - match_with_policy(card_bgr) -> MatchResult
+    - match_from_camera(camera, attempts_per_card=3, inter_frame_delay=0.08) -> MatchResult
+    - reload_index()
+- MatchResult dataclass: structured outcome and diagnostics
+"""
+
+from dataclasses import dataclass, field
+from typing import Optional, Callable, Dict, Any, List
+from pathlib import Path
+import time
+import uuid
 import cv2
 import numpy as np
-import pickle
-from pathlib import Path
-from . import config, init as app_init, utils
 
-# DB file naming
-DB_INDEX_FILE = app_init.DESCRIPTORS_DIR / "phash_index.pkl"
+import app as app_pkg
+from . import crop
+# default component implementations; these modules should exist in the package
+from .preprocess import preprocess_for_phash
+from .phash import (
+    compute_phash_from_gray,
+    match_phash,
+    verify_with_orb,
+    load_index,
+)
+from .ocr import crop_title_band, ocr_image
 
-# Tunable parameters
-PHASH_SIZE = 32            # phash block size (higher => more discriminative, slower)
-PHASH_DIST_THRESHOLD = 10  # hamming threshold for an initial match
-TOP_K = 5                  # number of candidate matches to return to verifier
-ORB_MIN_MATCHES = 8        # minimum good ORB matches to consider a verification success
+from . import utils
+log = utils.get_logger("matcher")
 
-# Ensure descriptors dir exists
-app_init.DESCRIPTORS_DIR.mkdir(parents=True, exist_ok=True)
+# Configuration defaults (override via Matcher config param)
+DEFAULTS = {
+    "phash_size": 32,
+    "phash_threshold": 10,
+    "top_k": 5,
+    "orb_min_matches": 8,
+    "orb_inlier_threshold": 6,
+    "attempts_per_card": 3,
+    "inter_frame_delay": 0.08,
+    "ocr_on_failure": True,
+    "ocr_threshold_margin": 6,  # run OCR if best_dist <= threshold + margin
+    "save_debug_on_failure": True,
+}
 
-# --- Preprocessing and hashing ------------------------------------------------
-def preprocess_for_phash(img, size=256, clahe=True, blur_ksize=(3, 3), crop_margin_pct=0.02):
-    """Return a single-channel uint8 image prepared for phash."""
-    if img is None:
-        raise ValueError("input image is None")
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape
-    mpx = int(min(h, w) * crop_margin_pct)
-    if mpx > 0 and h - 2 * mpx > 0 and w - 2 * mpx > 0:
-        gray = gray[mpx:h - mpx, mpx:w - mpx]
-    gray = cv2.resize(gray, (size, size), interpolation=cv2.INTER_AREA)
-    if blur_ksize:
-        gray = cv2.GaussianBlur(gray, blur_ksize, 0)
-    if clahe:
-        clahe_obj = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        gray = clahe_obj.apply(gray)
-    return gray
+DEBUG_DIR = Path(app_pkg.DEBUG_DIR)
+DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
-def compute_phash_opencv(img_gray, hash_size=PHASH_SIZE):
-    """Return a 1D uint8 array representing the phash."""
-    # OpenCV's img_hash.PHash_create expects CV_8U single channel images
-    phash = cv2.img_hash.PHash_create(hash_size=hash_size)
-    h = phash.compute(img_gray)
-    if h is None:
-        raise RuntimeError("phash computation failed")
-    return np.asarray(h).flatten().astype(np.uint8)
+@dataclass
+class MatchResult:
+    success: bool
+    id: Optional[str] = None
+    dist: Optional[int] = None
+    orb_matches: Optional[int] = None
+    inliers: Optional[int] = None
+    ocr_text: Optional[str] = None
+    ocr_conf: Optional[int] = None
+    meta: Dict[str, Any] = field(default_factory=dict)
+    debug_files: Dict[str, str] = field(default_factory=dict)
+    attempts: int = 0
+    elapsed: float = 0.0
 
-def hamming_distance_bytes(a, b):
-    """Count differing bits between two uint8 arrays."""
-    a = np.asarray(a, dtype=np.uint8)
-    b = np.asarray(b, dtype=np.uint8)
-    if a.shape != b.shape:
-        raise ValueError("hash shapes differ")
-    xor = np.bitwise_xor(a, b)
-    # count set bits
-    return int(np.unpackbits(xor).sum())
-
-# --- DB load/save -------------------------------------------------------------
-def save_index(index, path=DB_INDEX_FILE):
-    with open(path, "wb") as f:
-        pickle.dump(index, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-def load_index(path=DB_INDEX_FILE):
-    if not path.exists():
-        return {}
-    with open(path, "rb") as f:
-        return pickle.load(f)
-
-def build_index_from_folder(images_folder, out_path=DB_INDEX_FILE, preprocess_size=256):
+class Matcher:
     """
-    Build a phash index from a folder of images.
-    images_folder should contain image files named with an identifier that maps back to Scryfall metadata.
-    Stored index format: {id: {"phash": bytes, "meta": {...}}}
+    Compose low-level primitives into a recognition policy.
+    Accepts optional injected functions/modules for easier testing.
     """
-    images_folder = Path(images_folder)
-    index = {}
-    for img_path in images_folder.glob("*.png"):
-        try:
-            img = cv2.imread(str(img_path))
-            if img is None:
-                continue
-            gray = preprocess_for_phash(img, size=preprocess_size)
-            ph = compute_phash_opencv(gray)
-            # meta extraction: use file stem as id; you can extend to load companion metadata
-            idx = img_path.stem
-            index[idx] = {"phash": ph, "meta": {"path": str(img_path)}}
-        except Exception as e:
-            # keep building; log via utils if available
+
+    def __init__(
+        self,
+        phash_index: Optional[Dict[str, Any]] = None,
+        preprocess_fn: Callable[[np.ndarray], np.ndarray] = None,
+        ocr_fn: Callable[[np.ndarray], tuple] = None,
+        config: Optional[Dict[str, Any]] = None,
+    ):
+        self.config = {**DEFAULTS, **(config or {})}
+        self._index = phash_index or load_index(Path(app_pkg.DESCRIPTORS_DIR) / "phash_index.pkl")
+        # injection points (use defaults if not provided)
+        self.preprocess_fn = preprocess_fn or (lambda img, **kw: preprocess_for_phash(img, **kw))
+        self.ocr_fn = ocr_fn or (lambda img: ocr_image(img))
+        # cached last-match debug id for quick investigation
+        self._last_debug_id = None
+
+        log.info("Matcher initialized with phash_size=%s top_k=%s", self.config["phash_size"], self.config["top_k"])
+
+    def reload_index(self, path: Optional[Path] = None):
+        path = Path(path) if path else Path(app_pkg.DESCRIPTORS_DIR) / "phash_index.pkl"
+        self._index = load_index(path)
+
+    def _save_debug(self, img: np.ndarray, tag: str) -> str:
+        path = utils.save_debug_image(img, tag=tag, directory=Path(app_pkg.DEBUG_DIR))
+        if path:
+            log.debug("Saved debug image %s -> %s", tag, path)
+        else:
+            log.warning("Failed to save debug image for %s", tag)
+        return path or ""
+
+    def match_once(self, card_bgr: np.ndarray) -> Optional[MatchResult]:
+        """
+        One-shot attempt: preprocess -> compute phash -> find top candidates -> (no policy retries).
+        Returns MatchResult on decision (success True or False) or None if index empty.
+        """
+        if not self._index:
+            return None
+
+        start = time.time()
+        cfg = self.config
+        # preprocess to canonical gray used by phash
+        gray = self.preprocess_fn(card_bgr, out_size=256, clahe=True, blur_ksize=(3,3), crop_margin_pct=0.02)
+        qph = compute_phash_from_gray(gray, phash_size=cfg["phash_size"])
+
+        candidates = match_phash(qph, self._index, top_k=cfg["top_k"], threshold=cfg["phash_threshold"])
+        result = MatchResult(success=False, attempts=1, elapsed=0.0)
+
+        if not candidates:
+            result.elapsed = time.time() - start
+            return result
+
+        best_key, best_rec, best_dist = candidates[0]
+        result.dist = int(best_dist)
+        result.meta = best_rec.get("meta", {})
+
+        # Accept if within threshold; optionally verify with ORB
+        if best_dist <= cfg["phash_threshold"]:
+            good, inls = 0, 0
+            if cfg["orb_min_matches"] > 0:
+                try:
+                    db_path = Path(best_rec["meta"].get("path", ""))
+                    db_img = cv2.imread(str(db_path)) if db_path.exists() else None
+                    if db_img is not None:
+                        good, inls = verify_with_orb(card_bgr, db_img, min_matches=cfg["orb_min_matches"])
+                except Exception:
+                    good, inls = 0, 0
+            result.success = True
+            result.id = best_key
+            result.orb_matches = int(good)
+            result.inliers = int(inls)
+            result.elapsed = time.time() - start
+            return result
+
+        # Not within threshold; keep best candidate info for fallback decision
+        result.elapsed = time.time() - start
+        return result
+
+    def match_with_policy(self, card_bgr: np.ndarray) -> MatchResult:
+        """
+        High-level policy: attempt phash matching multiple times, then optionally OCR fallback.
+        Always returns a MatchResult (success True/False).
+        """
+        cfg = self.config
+        attempts = cfg["attempts_per_card"]
+        inter_delay = cfg["inter_frame_delay"]
+        start_total = time.time()
+
+        best_overall: Optional[MatchResult] = None
+
+        for attempt in range(1, attempts + 1):
+            mr = self.match_once(card_bgr)
+            if mr is None:
+                # index empty or other fatal; return failure result
+                return MatchResult(success=False, attempts=attempt, elapsed=time.time() - start_total)
+            mr.attempts = attempt
+            if best_overall is None or (mr.dist is not None and (best_overall.dist is None or mr.dist < best_overall.dist)):
+                best_overall = mr
+            if mr.success:
+                best_overall.elapsed = time.time() - start_total
+                return best_overall
+            # not success, wait and allow caller to provide new frame if desired
+            time.sleep(inter_delay)
+
+        # after retries, consider OCR fallback if configured and candidate near threshold+margin
+        final = best_overall or MatchResult(success=False, attempts=attempts, elapsed=time.time() - start_total)
+        run_ocr = cfg["ocr_on_failure"] and final.dist is not None and final.dist <= (cfg["phash_threshold"] + cfg["ocr_threshold_margin"])
+
+        if run_ocr:
             try:
-                utils.log_exception(e)
+                title_crop = crop_title_band(card_bgr)
+                text, conf = self.ocr_fn(title_crop)
+                if text and conf > 0:
+                    # simple heuristic: treat OCR confirmation as success
+                    final.success = True
+                    final.ocr_text = text
+                    final.ocr_conf = conf
+                    final.elapsed = time.time() - start_total
+                    return final
+            except Exception as exc:
+                utils.log_exception(log, exc, "Exception while running OCR fallback")
+
+        # save debug artifacts when configured
+        if cfg["save_debug_on_failure"]:
+            try:
+                dbg_query = self._save_debug(card_bgr, "query")
+                final.debug_files["query"] = dbg_query
+                if final.meta.get("path"):
+                    cand_img = cv2.imread(final.meta["path"])
+                    if cand_img is not None:
+                        final.debug_files["candidate"] = self._save_debug(cand_img, "candidate")
             except Exception:
                 pass
-    save_index(index, out_path)
-    return index
 
-# --- ORB verifier -------------------------------------------------------------
-def orb_verify(img1, img2, min_matches=ORB_MIN_MATCHES):
-    """Return (good_matches, inlier_count). Both imgs are BGR; we compute ORB keypoints and BF matches."""
-    orb = cv2.ORB_create(2000)
-    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-    kp1, des1 = orb.detectAndCompute(gray1, None)
-    kp2, des2 = orb.detectAndCompute(gray2, None)
-    if des1 is None or des2 is None:
-        return 0, 0
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-    matches = bf.knnMatch(des1, des2, k=2)
-    # ratio test
-    good = []
-    for m_n in matches:
-        if len(m_n) != 2:
-            continue
-        m, n = m_n
-        if m.distance < 0.75 * n.distance:
-            good.append(m)
-    if len(good) < min_matches:
-        return len(good), 0
-    # estimate homography inliers if possible
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
-    try:
-        M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-        if mask is None:
-            return len(good), 0
-        inliers = int(mask.sum())
-        return len(good), inliers
-    except Exception:
-        return len(good), 0
+        final.elapsed = time.time() - start_total
+        return final
 
-# --- Matching API -------------------------------------------------------------
-def match_card(card_bgr):
-    """
-    Attempt to match a card image (BGR) to the DB.
-    Returns either None or (meta_record, score, good_matches, inliers)
-    Score is the Hamming distance; lower is better.
-    """
-    index = load_index()
-    if not index:
-        raise FileNotFoundError("phash index not found; build it via build_index_from_folder")
+    def match_from_camera(self, camera, attempts_per_card: Optional[int] = None, inter_frame_delay: Optional[float] = None) -> MatchResult:
+        """
+        Convenience: read frames from a persistent camera handle and apply match_with_policy.
+        'camera' must expose read(timeout) and is_open()/stop() methods (e.g., Camera class).
+        This method will read a frame, run the policy, and return the MatchResult.
+        """
+        ap = attempts_per_card or self.config["attempts_per_card"]
+        idelay = inter_frame_delay if inter_frame_delay is not None else self.config["inter_frame_delay"]
 
-    query_gray = preprocess_for_phash(card_bgr, size=256)
-    qph = compute_phash_opencv(query_gray)
-
-    # Compute distances
-    candidates = []
-    for key, rec in index.items():
-        dbph = rec["phash"]
-        dist = hamming_distance_bytes(qph, dbph)
-        candidates.append((key, rec, dist))
-    candidates.sort(key=lambda x: x[2])  # sort by distance asc
-
-    # quick accept if top candidate is below primary threshold
-    top_candidates = candidates[:TOP_K]
-    best_key, best_rec, best_dist = top_candidates[0]
-    if best_dist <= PHASH_DIST_THRESHOLD:
-        # do optional ORB verification to reduce false positives
-        try:
-            db_img_path = Path(best_rec["meta"]["path"])
-            db_img = cv2.imread(str(db_img_path)) if db_img_path.exists() else None
-            if db_img is not None:
-                good, inliers = orb_verify(card_bgr, db_img)
-            else:
-                good, inliers = 0, 0
-        except Exception:
-            good, inliers = 0, 0
-        return best_rec["meta"], int(best_dist), int(good), int(inliers)
-
-    # no match found within threshold
-    return None
-
-# Expose utilities for CLI or programmatic use
-__all__ = [
-    "compute_phash_opencv",
-    "preprocess_for_phash",
-    "build_index_from_folder",
-    "load_index",
-    "save_index",
-    "match_card",
-]
+        # read one frame as starting frame; caller can manage conveyor and repeated reads externally
+        frame = camera.read(timeout=1.0)
+        if frame is None:
+            return MatchResult(success=False, attempts=0, elapsed=0.0)
+        return self.match_with_policy(frame)
