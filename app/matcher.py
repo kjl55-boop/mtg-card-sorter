@@ -1,97 +1,110 @@
-"""
-Runtime matcher: pHash prefilter -> ORB verification.
-Lightweight caching of metadata; descriptor files loaded on demand.
-"""
-
-import sqlite3
-import os
-from pathlib import Path
-from PIL import Image
-import imagehash
-import numpy as np
+# app/matcher.py
 import cv2
-from app import config, utils
+import numpy as np
+import pickle
+from pathlib import Path
+from . import config, init as app_init, utils
 
-DB_PATH = config.DB_PATH
-DESC_DIR = Path(config.DESC_DIR)
-ORB_FEATURES = config.ORB_FEATURES
-PH_MAX = config.PHASH_HAMMING_THRESHOLD
-TOP_K = config.MATCH_TOP_K
+# DB file naming
+DB_INDEX_FILE = app_init.DESCRIPTORS_DIR / "phash_index.pkl"
 
-orb = cv2.ORB_create(nfeatures=ORB_FEATURES)
-bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+# Tunable parameters
+PHASH_SIZE = 32            # phash block size (higher => more discriminative, slower)
+PHASH_DIST_THRESHOLD = 10  # hamming threshold for an initial match
+TOP_K = 5                  # number of candidate matches to return to verifier
+ORB_MIN_MATCHES = 8        # minimum good ORB matches to consider a verification success
 
-# Cache tiny table in memory
-_CARD_TABLE = None
+# Ensure descriptors dir exists
+app_init.DESCRIPTORS_DIR.mkdir(parents=True, exist_ok=True)
 
-def _load_table():
-    global _CARD_TABLE
-    if _CARD_TABLE is not None:
-        return _CARD_TABLE
-    if not Path(DB_PATH).exists():
-        raise FileNotFoundError(f"DB not found: {DB_PATH}")
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT id, name, set_code, collector_number, image_url, phash, desc_file FROM cards")
-    rows = cur.fetchall()
-    conn.close()
-    _CARD_TABLE = [dict(id=r[0], name=r[1], set_code=r[2], collector_number=r[3],
-                        image_url=r[4], phash=r[5], desc_file=r[6]) for r in rows]
-    return _CARD_TABLE
+# --- Preprocessing and hashing ------------------------------------------------
+def preprocess_for_phash(img, size=256, clahe=True, blur_ksize=(3, 3), crop_margin_pct=0.02):
+    """Return a single-channel uint8 image prepared for phash."""
+    if img is None:
+        raise ValueError("input image is None")
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    mpx = int(min(h, w) * crop_margin_pct)
+    if mpx > 0 and h - 2 * mpx > 0 and w - 2 * mpx > 0:
+        gray = gray[mpx:h - mpx, mpx:w - mpx]
+    gray = cv2.resize(gray, (size, size), interpolation=cv2.INTER_AREA)
+    if blur_ksize:
+        gray = cv2.GaussianBlur(gray, blur_ksize, 0)
+    if clahe:
+        clahe_obj = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray = clahe_obj.apply(gray)
+    return gray
 
-def _phash_from_array(np_img):
-    pil = Image.fromarray(cv2.cvtColor(np_img, cv2.COLOR_BGR2RGB))
-    return imagehash.phash(pil)
+def compute_phash_opencv(img_gray, hash_size=PHASH_SIZE):
+    """Return a 1D uint8 array representing the phash."""
+    # OpenCV's img_hash.PHash_create expects CV_8U single channel images
+    phash = cv2.img_hash.PHash_create(hash_size=hash_size)
+    h = phash.compute(img_gray)
+    if h is None:
+        raise RuntimeError("phash computation failed")
+    return np.asarray(h).flatten().astype(np.uint8)
 
-def _hamming(ph, hex_str):
-    other = imagehash.hex_to_hash(hex_str)
-    return ph - other
+def hamming_distance_bytes(a, b):
+    """Count differing bits between two uint8 arrays."""
+    a = np.asarray(a, dtype=np.uint8)
+    b = np.asarray(b, dtype=np.uint8)
+    if a.shape != b.shape:
+        raise ValueError("hash shapes differ")
+    xor = np.bitwise_xor(a, b)
+    # count set bits
+    return int(np.unpackbits(xor).sum())
 
-def get_candidates_by_phash(np_img, max_hamming=PH_MAX, top_k=TOP_K):
-    table = _load_table()
-    ph = _phash_from_array(np_img)
-    candidates = []
-    for rec in table:
-        try:
-            d = _hamming(ph, rec["phash"])
-            if d <= max_hamming:
-                candidates.append((rec, d))
-        except Exception:
-            continue
-    candidates.sort(key=lambda x: x[1])
-    return [c[0] for c in candidates[:top_k]]
+# --- DB load/save -------------------------------------------------------------
+def save_index(index, path=DB_INDEX_FILE):
+    with open(path, "wb") as f:
+        pickle.dump(index, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-def _load_descriptor(rec):
-    path = DESC_DIR / (rec["id"] + ".npz")
+def load_index(path=DB_INDEX_FILE):
     if not path.exists():
-        return None, None
-    data = np.load(path)
-    des = data["des"] if "des" in data else np.array([])
-    kps_arr = data["kps"] if "kps" in data else np.array([])
-    # convert kps_arr -> cv2.KeyPoint list
-    kps = []
-    if kps_arr.size != 0:
-        for row in kps_arr:
-            x, y, size, angle = float(row[0]), float(row[1]), float(row[2]), float(row[3])
-            kps.append(cv2.KeyPoint(x, y, _size=size, _angle=angle))
-    return kps, des
+        return {}
+    with open(path, "rb") as f:
+        return pickle.load(f)
 
-def verify_orb(np_img, rec, min_good=12):
-    kps2, des2 = _load_descriptor(rec)
-    if des2 is None or des2.size == 0:
+def build_index_from_folder(images_folder, out_path=DB_INDEX_FILE, preprocess_size=256):
+    """
+    Build a phash index from a folder of images.
+    images_folder should contain image files named with an identifier that maps back to Scryfall metadata.
+    Stored index format: {id: {"phash": bytes, "meta": {...}}}
+    """
+    images_folder = Path(images_folder)
+    index = {}
+    for img_path in images_folder.glob("*.png"):
+        try:
+            img = cv2.imread(str(img_path))
+            if img is None:
+                continue
+            gray = preprocess_for_phash(img, size=preprocess_size)
+            ph = compute_phash_opencv(gray)
+            # meta extraction: use file stem as id; you can extend to load companion metadata
+            idx = img_path.stem
+            index[idx] = {"phash": ph, "meta": {"path": str(img_path)}}
+        except Exception as e:
+            # keep building; log via utils if available
+            try:
+                utils.log_exception(e)
+            except Exception:
+                pass
+    save_index(index, out_path)
+    return index
+
+# --- ORB verifier -------------------------------------------------------------
+def orb_verify(img1, img2, min_matches=ORB_MIN_MATCHES):
+    """Return (good_matches, inlier_count). Both imgs are BGR; we compute ORB keypoints and BF matches."""
+    orb = cv2.ORB_create(2000)
+    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+    kp1, des1 = orb.detectAndCompute(gray1, None)
+    kp2, des2 = orb.detectAndCompute(gray2, None)
+    if des1 is None or des2 is None:
         return 0, 0
-    gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY)
-    H = 512
-    scale = H / gray.shape[0]
-    gray_r = cv2.resize(gray, (int(gray.shape[1]*scale), H), interpolation=cv2.INTER_LINEAR)
-    kp1, des1 = orb.detectAndCompute(gray_r, None)
-    if des1 is None or des1.size == 0:
-        return 0, 0
-    # knn match
-    try:
-        matches = bf.knnMatch(des1, des2, k=2)
-    except Exception:
-        return 0, 0
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+    matches = bf.knnMatch(des1, des2, k=2)
+    # ratio test
     good = []
     for m_n in matches:
         if len(m_n) != 2:
@@ -99,27 +112,67 @@ def verify_orb(np_img, rec, min_good=12):
         m, n = m_n
         if m.distance < 0.75 * n.distance:
             good.append(m)
-    good_count = len(good)
-    inliers = 0
-    if good_count >= min_good and len(kps2) > 3:
-        src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1,1,2)
-        dst_pts = np.float32([kps2[m.trainIdx].pt for m in good]).reshape(-1,1,2)
-        try:
-            M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-            if mask is not None:
-                inliers = int(mask.sum())
-        except Exception:
-            inliers = 0
-    return good_count, inliers
+    if len(good) < min_matches:
+        return len(good), 0
+    # estimate homography inliers if possible
+    src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
+    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+    try:
+        M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+        if mask is None:
+            return len(good), 0
+        inliers = int(mask.sum())
+        return len(good), inliers
+    except Exception:
+        return len(good), 0
 
-def match_card(np_img, ph_max=PH_MAX, top_k=TOP_K):
-    candidates = get_candidates_by_phash(np_img, max_hamming=ph_max, top_k=top_k)
-    best = None
-    best_score = -1
-    for rec in candidates:
-        good_count, inliers = verify_orb(np_img, rec)
-        score = inliers * 2 + good_count
-        if score > best_score:
-            best_score = score
-            best = (rec, score, good_count, inliers)
-    return best
+# --- Matching API -------------------------------------------------------------
+def match_card(card_bgr):
+    """
+    Attempt to match a card image (BGR) to the DB.
+    Returns either None or (meta_record, score, good_matches, inliers)
+    Score is the Hamming distance; lower is better.
+    """
+    index = load_index()
+    if not index:
+        raise FileNotFoundError("phash index not found; build it via build_index_from_folder")
+
+    query_gray = preprocess_for_phash(card_bgr, size=256)
+    qph = compute_phash_opencv(query_gray)
+
+    # Compute distances
+    candidates = []
+    for key, rec in index.items():
+        dbph = rec["phash"]
+        dist = hamming_distance_bytes(qph, dbph)
+        candidates.append((key, rec, dist))
+    candidates.sort(key=lambda x: x[2])  # sort by distance asc
+
+    # quick accept if top candidate is below primary threshold
+    top_candidates = candidates[:TOP_K]
+    best_key, best_rec, best_dist = top_candidates[0]
+    if best_dist <= PHASH_DIST_THRESHOLD:
+        # do optional ORB verification to reduce false positives
+        try:
+            db_img_path = Path(best_rec["meta"]["path"])
+            db_img = cv2.imread(str(db_img_path)) if db_img_path.exists() else None
+            if db_img is not None:
+                good, inliers = orb_verify(card_bgr, db_img)
+            else:
+                good, inliers = 0, 0
+        except Exception:
+            good, inliers = 0, 0
+        return best_rec["meta"], int(best_dist), int(good), int(inliers)
+
+    # no match found within threshold
+    return None
+
+# Expose utilities for CLI or programmatic use
+__all__ = [
+    "compute_phash_opencv",
+    "preprocess_for_phash",
+    "build_index_from_folder",
+    "load_index",
+    "save_index",
+    "match_card",
+]
