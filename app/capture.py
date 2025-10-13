@@ -31,6 +31,8 @@ log = utils.get_logger("camera")
 from .crop import crop_card_from_box, find_card_contour
 from .config import CAMERA_PREVIEW_SIZE, CAMERA_WARMUP_SEC, NORMALIZED_SIZE, DEBUG_DIR
 
+from typing import Optional, Tuple
+
 # ensure debug dir exists
 Path(DEBUG_DIR).mkdir(parents=True, exist_ok=True)
 OUT_W, OUT_H = NORMALIZED_SIZE
@@ -214,6 +216,104 @@ class Camera:
             utils.log_exception(log, exc, "Exception while stopping camera")
         self._handle = None
         self.backend_name = None
+    
+    #Camera focus Utils
+    def set_autofocus(self, enabled: bool) -> bool:
+        """Enable or disable autofocus on supported backends. Returns True if action was attempted."""
+        try:
+            if self.backend_name == "opencv" and self._handle is not None:
+                # Many V4L2 drivers accept CAP_PROP_AUTOFOCUS (1 on, 0 off)
+                ok = bool(self._handle.set(cv2.CAP_PROP_AUTOFOCUS, 1 if enabled else 0))
+                log.info("OpenCV autofocus set -> %s (ok=%s)", enabled, ok)
+                return ok
+            if self.backend_name == "picamera2" and self._handle is not None:
+                try:
+                    from picamera2 import controls
+                    mode = controls.AfModeEnum.Auto if enabled else controls.AfModeEnum.Off
+                    self._handle.set_controls({"AfMode": mode})
+                    log.info("Picamera2 autofocus set -> %s", enabled)
+                    return True
+                except Exception:
+                    log.debug("Picamera2 autofocus control not available")
+                    return False
+            # libcamera-jpeg or unknown backends: not supported here
+            log.debug("Autofocus not implemented for backend=%s", self.backend_name)
+            return False
+        except Exception as exc:
+            utils.log_exception(log, exc, "set_autofocus failed")
+            return False
+
+    def set_focus_roi(self, roi: Optional[Tuple[float, float, float, float]]) -> bool:
+        """
+        Bias autofocus to an ROI expressed as normalized (x, y, w, h) in [0..1].
+        Use None to clear ROI bias. Returns True if attempted.
+        """
+        try:
+            if self.backend_name == "picamera2" and self._handle is not None:
+                # Picamera2 supports AfWin or AfRegion depending on driver; try common variants
+                try:
+                    # AfRegion expects {'AfRegion': (x,y,w,h)} or AfWin variant in some versions
+                    if roi is None:
+                        self._handle.set_controls({"AfRegion": None})
+                    else:
+                        x, y, w, h = roi
+                        # ensure values in 0..1
+                        x, y, w, h = float(x), float(y), float(w), float(h)
+                        self._handle.set_controls({"AfRegion": (x, y, w, h)})
+                    log.info("Picamera2 focus ROI set -> %s", roi)
+                    return True
+                except Exception:
+                    log.debug("Picamera2 AfRegion/AfWin control not available; trying LensPosition bias")
+                    return False
+            if self.backend_name == "opencv" and self._handle is not None:
+                # OpenCV/V4L2 usually doesn't offer ROI AF via VideoCapture API; try v4l2-ctl externally if available
+                log.debug("OpenCV autofocus ROI not supported via cv2; use v4l2-ctl externally")
+                return False
+            log.debug("Focus ROI not implemented for backend=%s", self.backend_name)
+            return False
+        except Exception as exc:
+            utils.log_exception(log, exc, "set_focus_roi failed")
+            return False
+
+    def lock_focus(self, roi: Optional[Tuple[float, float, float, float]] = None, wait_sec: float = 0.6) -> bool:
+        """
+        If supported: optionally bias AF to roi, enable AF briefly, wait, then disable AF to lock focus.
+        ROI is normalized (x,y,w,h) or None. Returns True if lock sequence was attempted.
+        """
+        try:
+            # bias AF if requested
+            if roi is not None:
+                self.set_focus_roi(roi)
+                time.sleep(0.05)
+            # enable AF for adjustment
+            ok_enable = self.set_autofocus(True)
+            if not ok_enable:
+                log.debug("lock_focus: autofocus enable not supported")
+            time.sleep(wait_sec)
+            # disable AF to lock current lens position
+            ok_disable = self.set_autofocus(False)
+            if ok_disable:
+                log.info("Focus locked (backend=%s)", self.backend_name)
+                return True
+            log.warning("lock_focus: unable to disable autofocus after auto-adjust")
+            return False
+        except Exception as exc:
+            utils.log_exception(log, exc, "lock_focus failed")
+            return False
+
+    def unlock_focus(self) -> bool:
+        """Re-enable autofocus so camera can re-acquire focus automatically."""
+        try:
+            ok = self.set_autofocus(True)
+            if ok:
+                log.info("Autofocus re-enabled")
+            else:
+                log.warning("unlock_focus: autofocus re-enable not supported")
+            return ok
+        except Exception as exc:
+            utils.log_exception(log, exc, "unlock_focus failed")
+            return False
+
 
 # ---------------- convenience single-shot API (keeps existing callers working) ----
 def capture_frame(cam_index: int = 0, timeout: float = 2.0) -> np.ndarray:
