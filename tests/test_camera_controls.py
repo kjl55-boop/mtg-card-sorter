@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
 """
-Live preview tester with interactive focus controls for Raspberry Pi camera.
+Live preview tester with interactive focus controls and multishot sharpness selection.
 
-- Uses Picamera2 preview_array() when available, falls back to OpenCV VideoCapture.
-- Uses v4l2-ctl to probe/set focus controls when available.
-- Keybindings:
-    q : quit
-    c : capture current frame -> out.jpg
-    p : probe picamera2 controls (printed to terminal)
-    g : probe v4l2 controls for /dev/video0 (printed to terminal)
-    a : toggle v4l2 autofocus (focus_auto)
-    + : increase focus_absolute by step
-    - : decrease focus_absolute by step
-    0 : reset focus_absolute to baseline
-    h : print help
+- Uses Picamera2 preview_array when available, falls back to OpenCV VideoCapture.
+- Multishot (burst) captures N frames, computes a Laplacian variance sharpness score,
+  and saves the best frame as best.jpg.
+- Adjustable burst size and inter-frame delay from the preview window.
+
+Keybindings (preview window):
+  q : quit
+  c : capture current frame -> out.jpg
+  m : single multishot burst -> best.jpg (prints per-frame scores)
+  M : continuous multishot bursts (press q to stop)
+  ] : increase burst count (N)
+  [ : decrease burst count (N)
+  > : increase inter-frame delay (seconds)
+  < : decrease inter-frame delay (seconds)
+  p : probe picamera2 controls (terminal)
+  g : probe v4l2 controls for /dev/video0 (terminal)
+  a : toggle v4l2 autofocus (focus_auto) if supported
+  + : increase focus_absolute by step (v4l2)
+  - : decrease focus_absolute by step (v4l2)
+  0 : reset focus_absolute to baseline
+  h : print help
 """
 import shlex
 import subprocess
@@ -37,9 +46,14 @@ except Exception:
 
 DEVICE = "/dev/video0"
 OUT_FILE = "out.jpg"
-PREVIEW_SIZE = (1280, 720)  # preview resolution to use
-FOCUS_STEP = 10             # change step for focus_absolute
-FOCUS_BASELINE = 100        # baseline focus value for reset (tune as needed)
+BEST_FILE = "best.jpg"
+PREVIEW_SIZE = (1280, 720)
+FOCUS_STEP = 10
+FOCUS_BASELINE = 100
+
+# Multishot defaults (adjustable from preview)
+MULTISHOT_N = 8
+MULTISHOT_DELAY = 0.05  # seconds between frames
 
 
 def run_cmd(cmd: str, timeout: float = 3.0) -> subprocess.CompletedProcess:
@@ -75,7 +89,6 @@ def v4l2_get(device: str, ctrl: str) -> Optional[int]:
         if cp.returncode != 0:
             return None
         out = cp.stdout.strip()
-        # format: ctrl_name: value
         if ":" in out:
             return int(out.split(":")[-1].strip())
         return int(out.strip())
@@ -152,22 +165,85 @@ def capture_and_save(frame, name=OUT_FILE):
     return True
 
 
+def sharpness_score(img):
+    if img is None:
+        return 0.0
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def do_multishot_capture_from_pc2(pc2, n, delay):
+    frames = []
+    for i in range(n):
+        try:
+            arr = pc2.capture_array()
+            frame = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        except Exception as exc:
+            print("pc2 capture failed:", exc)
+            return frames
+        frames.append(frame)
+        time.sleep(delay)
+    return frames
+
+
+def do_multishot_capture_from_cv2(cap, n, delay):
+    frames = []
+    for i in range(n):
+        ret, frame = cap.read()
+        if not ret:
+            print("OpenCV read failed at frame", i)
+            break
+        frames.append(frame)
+        time.sleep(delay)
+    return frames
+
+
+def run_multishot(pc2, cap, n, delay, out_path=BEST_FILE):
+    print(f"Multishot: N={n} delay={delay:.3f}s")
+    frames = None
+    if pc2 is not None:
+        frames = do_multishot_capture_from_pc2(pc2, n, delay)
+        if not frames:
+            print("Picamera2 multishot capture returned no frames; falling back to OpenCV")
+            frames = None
+    if frames is None:
+        if cap is None:
+            print("No capture backend available for multishot")
+            return False
+        frames = do_multishot_capture_from_cv2(cap, n, delay)
+    if not frames:
+        print("No frames captured in multishot")
+        return False
+    scores = [sharpness_score(f) for f in frames]
+    for i, s in enumerate(scores):
+        print(f"  frame {i:02d}: score {s:.2f}")
+    best_idx = int(max(range(len(scores)), key=lambda i: scores[i]))
+    print("Best frame:", best_idx, "score:", scores[best_idx])
+    cv2.imwrite(out_path, frames[best_idx])
+    print("Saved best frame to", out_path)
+    return True
+
+
 def print_help():
     print(
         "\nPreview controls:\n"
         "  q : quit\n"
         "  c : capture current frame -> out.jpg\n"
+        "  m : single multishot burst -> best.jpg\n"
+        "  M : continuous multishot bursts until stopped\n"
+        "  ] : increase burst count (N)\n"
+        "  [ : decrease burst count (N)\n"
+        "  > : increase inter-frame delay (seconds)\n"
+        "  < : decrease inter-frame delay (seconds)\n"
         "  p : probe picamera2 controls (terminal)\n"
         "  g : probe v4l2 controls for /dev/video0 (terminal)\n"
         "  a : toggle v4l2 autofocus (focus_auto)\n"
-        "  + : increase focus_absolute by step\n"
-        "  - : decrease focus_absolute by step\n"
-        "  0 : reset focus_absolute to baseline\n"
-        "  h : print this help\n"
+        "  + / - / 0 : v4l2 focus_absolute tweaks\n        h : print this help\n"
     )
 
 
 def main():
+    global MULTISHOT_N, MULTISHOT_DELAY
     use_pc2 = False
     pc2 = None
     cap = None
@@ -188,7 +264,6 @@ def main():
         if not cap.isOpened():
             print("OpenCV cannot open device 0")
             return
-        # set preview size for OpenCV capture if supported
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, PREVIEW_SIZE[0])
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, PREVIEW_SIZE[1])
         print("Using OpenCV preview from /dev/video0")
@@ -207,17 +282,17 @@ def main():
     if cv2 is not None:
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
 
+    continuous_multishot = False
+
     try:
         while True:
             frame = None
             if use_pc2:
                 try:
                     arr = pc2.capture_array()
-                    # convert RGB->BGR
-                    frame = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR) if cv2 is not None else arr
+                    frame = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
                 except Exception as exc:
                     print("Picamera2 capture_array failed:", exc)
-                    # try to fall back to OpenCV
                     use_pc2 = False
                     try:
                         pc2.stop()
@@ -238,10 +313,12 @@ def main():
                 break
 
             if cv2 is not None:
+                # overlay status
+                status = f"N={MULTISHOT_N} delay={MULTISHOT_DELAY:.3f}s"
+                cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
                 cv2.imshow(window, frame)
                 key = cv2.waitKey(1) & 0xFF
             else:
-                # no GUI, we can't interact
                 key = ord("q")
 
             if key == ord("q"):
@@ -253,19 +330,14 @@ def main():
             if key == ord("g"):
                 v4l2_list_ctrls(DEVICE)
             if key == ord("a"):
-                # toggle autofocus via v4l2 focus_auto if available
                 fa = v4l2_get(DEVICE, "focus_auto")
                 if fa is None:
                     print("focus_auto not available on device via v4l2")
                 else:
                     new = 0 if fa == 1 else 1
                     ok = v4l2_set(DEVICE, "focus_auto", new)
-                    if ok:
-                        print("Set focus_auto ->", new)
-                    else:
-                        print("Failed to set focus_auto")
+                    print("Set focus_auto ->", new if ok else "FAILED")
             if key in (ord("+"), ord("=")):
-                # increase focus
                 cur = v4l2_get(DEVICE, "focus_absolute") or focus_val
                 new = cur + FOCUS_STEP
                 if v4l2_set(DEVICE, "focus_absolute", new):
@@ -281,6 +353,27 @@ def main():
                 if v4l2_set(DEVICE, "focus_absolute", FOCUS_BASELINE):
                     focus_val = FOCUS_BASELINE
                     print("Reset focus_absolute ->", focus_val)
+            if key == ord("]"):
+                MULTISHOT_N = max(1, MULTISHOT_N + 1)
+                print("MULTISHOT_N ->", MULTISHOT_N)
+            if key == ord("["):
+                MULTISHOT_N = max(1, MULTISHOT_N - 1)
+                print("MULTISHOT_N ->", MULTISHOT_N)
+            if key == ord(">"):
+                MULTISHOT_DELAY = MULTISHOT_DELAY + 0.01
+                print("MULTISHOT_DELAY ->", MULTISHOT_DELAY)
+            if key == ord("<"):
+                MULTISHOT_DELAY = max(0.0, MULTISHOT_DELAY - 0.01)
+                print("MULTISHOT_DELAY ->", MULTISHOT_DELAY)
+            if key == ord("m"):
+                run_multishot(pc2 if use_pc2 else None, cap, MULTISHOT_N, MULTISHOT_DELAY, BEST_FILE)
+            if key == ord("M"):
+                continuous_multishot = not continuous_multishot
+                print("Continuous multishot ->", continuous_multishot)
+            if continuous_multishot:
+                run_multishot(pc2 if use_pc2 else None, cap, MULTISHOT_N, MULTISHOT_DELAY, BEST_FILE)
+                # small pause to allow UI responsiveness
+                time.sleep(0.1)
             if key == ord("h"):
                 print_help()
 
