@@ -3,14 +3,13 @@ Persistent Camera abstraction with backend failover plus helper utilities.
 
 Public API:
 - Camera(...) : class for persistent usage
-- init_camera(size) -> camera_handle (compat)
-- grab_frame(cam_handle, timeout) -> np.ndarray (compat)
-- close_camera(cam_handle) (compat)
+- init_camera(preview_size=None) -> Camera
+- grab_frame(cam, timeout) -> np.ndarray
+- close_camera(cam)
 - capture_frame(cam_index=0, timeout=2.0) -> np.ndarray (single-shot convenience)
 - normalize_and_save(...)
 - compute_phash_bgr(...)
 """
-
 from pathlib import Path
 import threading
 import time
@@ -19,23 +18,21 @@ import subprocess
 import os
 import shutil
 from time import sleep
-from typing import Optional
+from typing import Optional, Tuple
 
 import cv2
 from PIL import Image
 import imagehash
 import numpy as np
 
-from .crop import normalize_card_image
-
 from . import utils
 log = utils.get_logger("camera")
 
-# NOTE: update these imports to match your config/__init__ layout
+from .crop import crop_card_from_box, find_card_contour
 from .config import CAMERA_PREVIEW_SIZE, CAMERA_WARMUP_SEC, NORMALIZED_SIZE, DEBUG_DIR
 
-# preserve previous behavior of ensuring debug dir exists (can move to app.__init__ later)
-#Path(DEBUG_DIR).mkdir(parents=True, exist_ok=True)
+# ensure debug dir exists
+Path(DEBUG_DIR).mkdir(parents=True, exist_ok=True)
 OUT_W, OUT_H = NORMALIZED_SIZE
 
 class CameraError(RuntimeError):
@@ -68,7 +65,7 @@ class Camera:
         try:
             from picamera2 import Picamera2
         except Exception:
-            log.debug("picamera2 not available")
+            log.debug("picamera2 import failed or not installed")
             return None
         try:
             pc2 = Picamera2()
@@ -77,31 +74,38 @@ class Camera:
             pc2.start()
             time.sleep(self.warmup_sec)
             self.backend_name = "picamera2"
-            log.info("Selected backend: picamera2")
+            log.info("Camera backend selected: picamera2")
             return pc2
-        except Exception:
+        except Exception as exc:
             utils.log_exception(log, exc, "Failed to initialize Picamera2")
             return None
 
     def _open_libcamera_jpeg(self):
         if not shutil.which("libcamera-jpeg"):
+            log.debug("libcamera-jpeg not available on PATH")
             return None
-        # we'll execute libcamera-jpeg per-read; mark backend sentinel
         self.backend_name = "libcamera-jpeg"
+        log.info("Camera backend available: libcamera-jpeg (synchronous)")
         return "libcamera-jpeg"
 
     def _open_opencv(self):
-        cap = cv2.VideoCapture(self.cam_index, cv2.CAP_V4L2)
+        try:
+            cap = cv2.VideoCapture(self.cam_index, cv2.CAP_V4L2)
+        except Exception as exc:
+            utils.log_exception(log, exc, "VideoCapture initialization failed")
+            return None
         if not cap.isOpened():
             try:
                 cap.release()
             except Exception:
                 pass
+            log.debug("OpenCV VideoCapture not opened for index %s", self.cam_index)
             return None
         # warm-up reads
         for _ in range(2):
             cap.read()
         self.backend_name = "opencv"
+        log.info("Camera backend selected: opencv (V4L2)")
         return cap
 
     # ---------------- lifecycle ------------------------------------------
@@ -110,11 +114,14 @@ class Camera:
             return
         self._handle = self._open_picamera2() or self._open_libcamera_jpeg() or self._open_opencv()
         if self._handle is None:
+            log.error("No capture backend available")
             raise CameraError("No capture backend available")
         self._running = True
+        log.debug("Camera started with backend=%s", self.backend_name)
         if self.use_background_thread and self.backend_name != "libcamera-jpeg":
             self._thread = threading.Thread(target=self._bg_loop, daemon=True)
             self._thread.start()
+            log.debug("Background read thread started")
 
     def _bg_loop(self):
         while self._running:
@@ -132,11 +139,13 @@ class Camera:
             if self.backend_name == "opencv":
                 ret, frame = self._handle.read()
                 if not ret:
+                    log.debug("OpenCV read returned no frame")
                     return None
                 return frame
             # libcamera-jpeg handled synchronously in read()
             return None
-        except Exception:
+        except Exception as exc:
+            utils.log_exception(log, exc, "Exception during single read")
             return None
 
     def read(self, timeout: Optional[float] = None) -> Optional[np.ndarray]:
@@ -153,9 +162,9 @@ class Camera:
                 with self._lock:
                     frame = None if self._frame is None else self._frame.copy()
                 if frame is not None:
-                    log.debug("read: backend %s returned no frame", self.backend_name)
                     return frame
                 if timeout is not None and (time.time() - start) >= timeout:
+                    log.debug("read timed out waiting for frame")
                     return None
                 time.sleep(0.005)
         else:
@@ -172,13 +181,16 @@ class Camera:
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                    timeout=max(5, (timeout or 2.0) + 3))
                     img = cv2.imread(str(tmp))
-                except Exception:
+                except Exception as exc:
+                    utils.log_exception(log, exc, "libcamera-jpeg capture failed")
                     img = None
                 finally:
                     try:
                         tmp.unlink()
                     except Exception:
                         pass
+                if img is None:
+                    log.debug("libcamera-jpeg returned no image")
                 return img
             else:
                 return self._read_once()
@@ -191,13 +203,15 @@ class Camera:
         if self._thread is not None:
             self._thread.join(timeout=1.0)
             self._thread = None
+            log.debug("Background thread stopped")
         try:
             if self.backend_name == "picamera2" and self._handle is not None:
                 self._handle.stop()
             if self.backend_name == "opencv" and self._handle is not None:
                 self._handle.release()
-        except Exception:
-            pass
+            log.info("Camera backend stopped: %s", self.backend_name)
+        except Exception as exc:
+            utils.log_exception(log, exc, "Exception while stopping camera")
         self._handle = None
         self.backend_name = None
 
@@ -212,6 +226,7 @@ def capture_frame(cam_index: int = 0, timeout: float = 2.0) -> np.ndarray:
     try:
         img = cam.read(timeout=timeout)
         if img is None:
+            log.error("capture_frame: no frame captured")
             raise RuntimeError("capture_frame: no frame captured")
         return img
     finally:
@@ -226,27 +241,53 @@ def init_camera(preview_size: Optional[tuple] = None):
     return c
 
 def grab_frame(cam, timeout: float = 1.0):
-    return cam.read(timeout=timeout)
+    try:
+        return cam.read(timeout=timeout)
+    except Exception as exc:
+        utils.log_exception(log, exc, "grab_frame failed")
+        return None
 
 def close_camera(cam):
     try:
         cam.stop()
-    except Exception:
-        pass
+    except Exception as exc:
+        utils.log_exception(log, exc, "close_camera failed")
 
 # ---------------- helpers -----------------------------------------------------
 def normalize_and_save(frame_bgr: np.ndarray, filename: str,
-                       canny_low: int = 50, canny_high: int = 150,
-                       eps_scale: float = 0.02, min_area: int = 2000) -> Path:
-    norm = normalize_card_image(frame_bgr, size=(OUT_W, OUT_H),
-                                canny_low=canny_low, canny_high=canny_high,
-                                eps_scale=eps_scale, min_area=min_area)
+                       pad_x_pct: float = 0.02, pad_y_pct: float = 0.02,
+                       min_area: int = 2000) -> Path:
+    """
+    Find the card in frame, deskew/crop using crop_card_from_box, resize to NORMALIZED_SIZE, and save to DEBUG_DIR.
+    Returns the saved Path or raises RuntimeError on failure.
+    """
+    if frame_bgr is None:
+        raise ValueError("normalize_and_save: input frame is None")
+
+    box, _ = find_card_contour(frame_bgr, min_area=min_area)
+    if box is None:
+        log.warning("normalize_and_save: no card contour found")
+        raise RuntimeError("normalize_and_save: no card contour found")
+
+    card = crop_card_from_box(frame_bgr, box, pad_x_pct=pad_x_pct, pad_y_pct=pad_y_pct)
+    if card is None or card.size == 0:
+        log.warning("normalize_and_save: crop failed")
+        raise RuntimeError("normalize_and_save: crop failed")
+
+    norm = cv2.resize(card, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
     p = Path(DEBUG_DIR) / filename
     p.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(p), norm)
+    written = utils.safe_imwrite(str(p), norm)
+    if not written:
+        log.warning("Failed to write normalized image to %s", p)
+        raise RuntimeError(f"Failed to write normalized image to {p}")
+    log.info("Saved normalized image to %s", p)
     return p
 
 def compute_phash_bgr(frame_bgr: np.ndarray) -> str:
+    """
+    Compute perceptual hash (imagehash.phash) from an OpenCV BGR image and return hex string.
+    """
     img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     pil = Image.fromarray(img_rgb)
     return str(imagehash.phash(pil))
