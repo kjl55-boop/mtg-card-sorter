@@ -86,6 +86,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
     log.info("Starting run_inspector; debug_dir=%s", debug_dir)
 
     cam = capture.init_camera(preview_size=getattr(config, "CAMERA_PREVIEW_SIZE", None))
+    cam.dump_picamera2_controls()
     matcher = Matcher()  # uses defaults and loads index if available
     tesseract_config = tesseract_config or getattr(config, "TESSERACT_CONFIG_TITLE", None)
 

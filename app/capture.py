@@ -414,6 +414,26 @@ class Camera:
             utils.log_exception(log, exc, "unlock_focus failed")
             return False
 
+    def dump_picamera2_controls(self):
+        """Log all Picamera2 control keys and current values (best-effort)."""
+        try:
+            get_controls = getattr(self._handle, "get_controls", None)
+            controls_attr = getattr(self._handle, "controls", None)
+            if callable(get_controls):
+                ctrls = get_controls()
+                log.info("Picamera2.get_controls keys: %s", list(ctrls.keys()))
+                for k, v in ctrls.items():
+                    log.info("  control %s = %r", k, v)
+                return
+            if isinstance(controls_attr, dict):
+                log.info("Picamera2.controls keys: %s", list(controls_attr.keys()))
+                for k, v in controls_attr.items():
+                    log.info("  control %s = %r", k, v)
+                return
+            log.info("No get_controls/controls attribute available on Picamera2 handle")
+        except Exception as exc:
+            utils.log_exception(log, exc, "dump_picamera2_controls failed")
+
 
 # ---------------- convenience single-shot API and module helpers ----------------
 
