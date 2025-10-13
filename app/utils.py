@@ -18,13 +18,23 @@ import numpy as np
 # Package logger name
 PKG_LOGGER = "card_inspector"
 
-def configure_logging(level: int = logging.INFO, logfile: Optional[str] = None):
+def configure_logging(level: Optional[int] = None, logfile: Optional[str] = None):
     """
     Configure root package logger. Call once at application startup.
+    If level is None the function will default to logging.INFO.
     """
+    import logging
+
+    # default to INFO when caller passes None
+    if level is None:
+        level = logging.INFO
+
+    # accept string levels like "DEBUG"
+    if isinstance(level, str):
+        level = logging._nameToLevel.get(level.upper(), logging.INFO)
+
     logger = logging.getLogger(PKG_LOGGER)
     logger.setLevel(level)
-    # avoid adding duplicate handlers on repeated calls
     if logger.handlers:
         return logger
 
@@ -38,6 +48,7 @@ def configure_logging(level: int = logging.INFO, logfile: Optional[str] = None):
         fh.setFormatter(fmt)
         logger.addHandler(fh)
     return logger
+
 
 def get_logger(name: Optional[str] = None) -> logging.Logger:
     """Return a child logger for the package, e.g., get_logger('matcher')."""
