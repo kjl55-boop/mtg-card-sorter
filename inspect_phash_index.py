@@ -7,6 +7,9 @@ with open(index_path, "rb") as f:
 
 print(f"Total entries: {len(index)}\n")
 
+for card_id, rec in list(index.items())[:5]:
+    print(f"{card_id}: len(phash) = {len(rec['phash'])}")
+
 # Show first 5 entries
 for i, (card_id, value) in enumerate(index.items()):
     print(f"{i+1}. Card ID: {card_id}")
