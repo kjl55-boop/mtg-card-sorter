@@ -113,6 +113,15 @@ class ScryfallDBBuilder:
         self.build_index()
         self.logger.info("Build complete for set %s", self.set_code)
 
+    # Save phash as hex string
+    def save_phash_descriptor(card_id, phash, desc_dir):
+        conn = sqlite3.connect(desc_dir.parent / "cards.db")
+        cur = conn.cursor()
+        cur.execute("INSERT OR REPLACE INTO cards (id, phash) VALUES (?, ?)", (card_id, phash))
+        conn.commit()
+        conn.close()
+
+
 if __name__ == "__main__":
     import argparse
 

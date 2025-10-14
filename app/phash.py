@@ -31,9 +31,10 @@ DEFAULT_ORB_MIN_MATCHES = 8
 from PIL import Image
 import imagehash
 
-def compute_phash_from_gray(gray, phash_size=32):
+def compute_phash_from_gray(gray, phash_size=8):
     pil_img = Image.fromarray(gray)
-    return str(imagehash.phash(pil_img, hash_size=phash_size))
+    return str(imagehash.phash(pil_img, hash_size=phash_size))  # hex string
+
 '''
 def compute_phash_from_gray(gray_img: np.ndarray, phash_size: int = DEFAULT_PHASH_SIZE) -> np.ndarray:
     if gray_img is None:
@@ -101,22 +102,22 @@ def build_index_from_folder(images_folder: Path,
     save_index(index, Path(out_path))
     return index
 
-#import numpy as np
-from imagehash import ImageHash
+from imagehash import hex_to_hash
 
 def match_phash(query_phash, index, top_k=5, threshold=10):
-    query_hash = ImageHash(np.frombuffer(bytes.fromhex(query_phash), dtype=np.uint8))
+    query_hash = hex_to_hash(query_phash)
     candidates = []
 
     for card_id, rec in index.items():
-        db_bytes = rec["phash"]
-        db_hash = ImageHash(np.frombuffer(db_bytes, dtype=np.uint8))
+        db_phash = rec["phash"]
+        db_hash = hex_to_hash(db_phash)
         dist = query_hash - db_hash
         if dist <= threshold:
             candidates.append((card_id, rec, dist))
 
     candidates.sort(key=lambda x: x[2])
     return candidates[:top_k]
+
 
 
 '''
