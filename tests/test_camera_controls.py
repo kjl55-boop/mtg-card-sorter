@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
 Live preview tester with interactive focus controls, Picamera2 tuning, multishot sharpness
-selection, interactive manual focus sweep, and rpicam-still style setting application.
+selection, interactive manual focus sweep, rpicam-like setting application, and high-res capture.
 
 Keybindings (preview window):
   q : quit
   c : capture current frame -> out.jpg
   z : single rpicam-still capture (if available)
   Z : multishot using rpicam-still (if available)
-  m : single multishot burst -> best.jpg (OpenCV/Picamera2)
+  k : capture a high-resolution still using Picamera2 (fallback to rpicam-still)
+  m : single multishot burst -> best.jpg
   M : continuous multishot bursts until stopped
   ] : increase burst count (N)
   [ : decrease burst count (N)
@@ -19,9 +20,8 @@ Keybindings (preview window):
   a : toggle v4l2 autofocus (focus_auto)
   + / - / 0 : v4l2 focus_absolute tweaks
   t : apply Picamera2 tuned controls (best-effort)
-  r : revert Picamera2 controls to neutral (best-effort)
-  y : apply rpicam-still–like settings (still-size, exposure, gain, AF/AWB/NR/tonal)
-  u : revert rpicam-like settings to neutral
+  y : apply rpicam-still like settings (still-size, exposure/gain hints, AF/AWB/NR/tonal)
+  r : revert all tuned/rpicam-like Picamera2 settings to neutral
   s : start interactive manual focus sweep
   h : print help
 """
@@ -51,7 +51,7 @@ except Exception:
 DEVICE = "/dev/video0"
 OUT_FILE = "out.jpg"
 BEST_FILE = "best.jpg"
-PREVIEW_SIZE = (2304,1296)#(1280, 720)   # preview resolution for live preview
+PREVIEW_SIZE = (1280, 720)   # preview resolution for live preview
 FOCUS_STEP = 10
 FOCUS_BASELINE = 100
 
@@ -65,7 +65,7 @@ SWEEP_SHOTS_PER_POS = 12
 SWEEP_DELAY = 0.05
 
 # rpicam defaults to mimic
-RPICAM_STILL_SIZE = (2304, 1296)
+RPICAM_STILL_SIZE = (4056, 3040)  # conservative full-sensor still resolution
 RPICAM_STILL_TIMEOUT_MS = 1000
 
 # ---------------------------------------------------------------------------
@@ -624,6 +624,65 @@ def focus_sweep_interactive(pc2, cap, shots_per_position=SWEEP_SHOTS_PER_POS, de
 
 
 # ---------------------------------------------------------------------------
+# High-resolution capture helper (Picamera2 with fallback)
+# ---------------------------------------------------------------------------
+
+def capture_highres_with_picamera2(pc2, out_path="out_highres.jpg", still_size=RPICAM_STILL_SIZE):
+    """Attempt a high-res still using Picamera2; revert preview config afterwards (best-effort)."""
+    if pc2 is None:
+        print("Picamera2 not available for highres capture")
+        return False
+    try:
+        # remember current config if available
+        try:
+            prev_cfg = pc2.configuration
+        except Exception:
+            prev_cfg = None
+        # create still config
+        try:
+            still_cfg = pc2.create_still_configuration({"size": still_size})
+        except Exception:
+            still_cfg = pc2.create_preview_configuration({"size": still_size})
+        try:
+            pc2.configure(still_cfg)
+        except Exception as e:
+            print("configure(still) failed:", e)
+        try:
+            pc2.start()
+        except Exception:
+            pass
+        # apply rpicam-like controls to match rpicam-still pipeline
+        try:
+            apply_rpicam_like_settings(pc2, still_size=still_size, shutter_us=None, gain=None, af_mode_prefer="Continuous")
+        except Exception:
+            pass
+        time.sleep(0.25)  # warmup
+        arr = pc2.capture_array(timeout=10.0)
+        if arr is None:
+            raise RuntimeError("capture_array returned None")
+        if cv2 is None:
+            print("OpenCV required to save high-res array")
+            return False
+        bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(out_path, bgr)
+        print("Saved high-res still ->", out_path)
+        # restore preview config if we had one
+        try:
+            if prev_cfg is not None:
+                pc2.configure(prev_cfg)
+                try:
+                    pc2.start()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return True
+    except Exception as exc:
+        print("High-res capture with Picamera2 failed:", exc)
+        return False
+
+
+# ---------------------------------------------------------------------------
 # UI / main loop
 # ---------------------------------------------------------------------------
 
@@ -634,6 +693,7 @@ def print_help():
         "  c : capture current frame -> out.jpg\n"
         "  z : single rpicam-still capture (if available)\n"
         "  Z : multishot using rpicam-still (if available)\n"
+        "  k : capture high-res still (Picamera2 attempt, fallback to rpicam-still)\n"
         "  m : single multishot burst -> best.jpg\n"
         "  M : continuous multishot bursts until stopped\n"
         "  ] : increase burst count (N)\n"
@@ -645,9 +705,8 @@ def print_help():
         "  a : toggle v4l2 autofocus (focus_auto)\n"
         "  + / - / 0 : v4l2 focus_absolute tweaks\n"
         "  t : apply Picamera2 tuned controls\n"
-        "  r : revert Picamera2 controls\n"
-        "  y : apply rpicam-still like settings (still-size, exposure/gain hints, AF/AWB/NR/tonal)\n"
-        "  u : revert rpicam-like settings\n"
+        "  y : apply rpicam-still like settings\n"
+        "  r : revert Picamera2 tuned and rpicam-like settings to neutral\n"
         "  s : start interactive manual focus sweep\n"
         "  h : print this help\n"
     )
@@ -805,16 +864,14 @@ def main():
             if key == ord("t"):
                 ok = apply_picamera2_tuned_controls(pc2 if use_pc2 else None)
                 print("Tuned controls applied?" , ok)
-            if key == ord("r"):
-                ok = revert_picamera2_controls(pc2 if use_pc2 else None)
-                print("Revert controls applied?", ok)
             if key == ord("y"):
-                # apply rpicam-like settings (still-size, but only controls applied; still capture still uses rpicam-still if desired)
                 ok = apply_rpicam_like_settings(pc2 if use_pc2 else None, still_size=RPICAM_STILL_SIZE, shutter_us=None, gain=None, af_mode_prefer="Continuous")
                 print("Applied rpicam-like settings?", ok)
-            if key == ord("u"):
-                ok = revert_rpicam_like_settings(pc2 if use_pc2 else None)
-                print("Reverted rpicam-like settings?", ok)
+            if key == ord("r"):
+                # single reset key: revert both tuned and rpicam-like Picamera2 controls
+                ok1 = revert_picamera2_controls(pc2 if use_pc2 else None)
+                ok2 = revert_rpicam_like_settings(pc2 if use_pc2 else None)
+                print("Reverted tuned controls:", ok1, "reverted rpicam-like:", ok2)
             if key == ord("z"):
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 outname = f"rpicam_{ts}.jpg"
@@ -824,8 +881,15 @@ def main():
                 print(f"Running rpicam multishot N={MULTISHOT_N} delay={MULTISHOT_DELAY:.3f}s")
                 ok = multishot_with_rpicam(out_basename="rpicam_best.jpg", n=MULTISHOT_N, delay=MULTISHOT_DELAY)
                 print("rpicam multishot done:", ok)
-            if key == ord("m"):
-                run_multishot(pc2 if use_pc2 else None, cap, MULTISHOT_N, MULTISHOT_DELAY, BEST_FILE)
+            if key == ord("k"):
+                print("Attempting high-res capture via Picamera2 (fallback to rpicam-still if needed)")
+                ok = capture_highres_with_picamera2(pc2 if use_pc2 else None, out_path="out_highres.jpg", still_size=RPICAM_STILL_SIZE) if use_pc2 else False
+                if not ok:
+                    print("Picamera2 high-res capture failed or unavailable; falling back to rpicam-still CLI")
+                    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    outname = f"rpicam_highres_{ts}.jpg"
+                    ok2 = capture_with_rpicam(outname, timeout_ms=RPICAM_STILL_TIMEOUT_MS)
+                    print("Fallback rpicam-still saved:" if ok2 else "Fallback rpicam-still failed")
             if key == ord("s"):
                 print("Starting interactive focus sweep. This will pause preview until sweep completes.")
                 focus_sweep_interactive(pc2 if use_pc2 else None, cap, shots_per_position=MULTISHOT_N, delay=MULTISHOT_DELAY, positions=SWEEP_POSITIONS, out_dir="focus_sweep")
