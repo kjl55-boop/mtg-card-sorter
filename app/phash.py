@@ -46,13 +46,16 @@ def compute_phash_from_gray(gray_img: np.ndarray, phash_size: int = DEFAULT_PHAS
     return arr
 '''
 
+'''
+'''
+
 def hamming_distance(a: np.ndarray, b: np.ndarray) -> int:
     a = np.asarray(a, dtype=np.uint8)
     b = np.asarray(b, dtype=np.uint8)
     if a.shape != b.shape:
         raise ValueError("hash shapes differ")
     return int(np.unpackbits(np.bitwise_xor(a, b)).sum())
-
+    
 def _serialize_phash(arr: np.ndarray) -> bytes:
     return arr.tobytes()
 
@@ -98,6 +101,22 @@ def build_index_from_folder(images_folder: Path,
     save_index(index, Path(out_path))
     return index
 
+def match_phash(query_phash, index, top_k=5, threshold=10):
+    from imagehash import hex_to_hash
+
+    query_hash = hex_to_hash(query_phash)
+    candidates = []
+
+    for card_id, rec in index.items():
+        db_phash = rec["phash"]
+        dist = query_hash - hex_to_hash(db_phash)
+        if dist <= threshold:
+            candidates.append((card_id, rec, dist))
+
+    candidates.sort(key=lambda x: x[2])
+    return candidates[:top_k]
+
+'''
 def match_phash(query_phash: np.ndarray,
                 index: dict,
                 top_k: int = DEFAULT_TOP_K,
@@ -111,7 +130,8 @@ def match_phash(query_phash: np.ndarray,
         candidates.append((key, rec, int(dist)))
     candidates.sort(key=lambda x: x[2])
     return candidates[:top_k]
-
+'''
+    
 def verify_with_orb(img1_bgr: np.ndarray, img2_bgr: np.ndarray, min_matches: int = DEFAULT_ORB_MIN_MATCHES) -> Tuple[int, int]:
     orb = cv2.ORB_create(2000)
     gray1 = cv2.cvtColor(img1_bgr, cv2.COLOR_BGR2GRAY)
