@@ -189,6 +189,21 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                         log.info("Saved card to %s", p)
                     else:
                         log.warning("Failed to save card to %s", p)
+            if key == ord("f"):
+                if use_pc2 and pc2 is not None:
+                    print("Triggering autofocus cycle...")
+                    try:
+                        from libcamera import controls
+                        pc2.set_controls({
+                            "AfMode": controls.AfModeEnum.Manual,
+                            "AfMetering": controls.AfMeteringEnum.Auto
+                        })
+                        success = pc2.autofocus_cycle()
+                        print("Autofocus successful." if success else "Autofocus failed.")
+                    except Exception as exc:
+                        print("Autofocus cycle error:", exc)
+                else:
+                    print("Picamera2 not available or not running")
     finally:
         try:
             capture.close_camera(cam)

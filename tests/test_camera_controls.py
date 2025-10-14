@@ -743,10 +743,18 @@ def start_picamera2(preview_size=PREVIEW_SIZE, warmup=0.2):
         cfg = pc2.create_preview_configuration({"size": preview_size})
         pc2.configure(cfg)
         pc2.start()
+        from libcamera import controls
+        pc2.set_controls({
+            "AfMode": controls.AfModeEnum.Manual,
+            "AfMetering": controls.AfMeteringEnum.Auto
+        })
+        print("Autofocus cycle at startup...")
+        success = pc2.autofocus_cycle()
+        print("Autofocus successful." if success else "Autofocus failed.")
         time.sleep(warmup)
         return pc2
     except Exception as exc:
-        print("Picamera2 start failed:", exc)
+        print("Picamera2 start failed or autofocus error:", exc)
         try:
             pc2.stop()
         except Exception:
