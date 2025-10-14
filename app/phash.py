@@ -88,7 +88,7 @@ def match_card(card_bgr: np.ndarray,
                preprocess_kwargs: Optional[Dict] = None,
                top_k: int = DEFAULT_TOP_K,
                threshold: int = DEFAULT_THRESHOLD,
-               verify_orb: bool = True) -> Optional[Dict[str, Any]]:
+               verify_orb: bool = True) -> Optional[Dict[str, any]]:
     if index is None:
         raise ValueError("index must be provided")
     preprocess_kwargs = preprocess_kwargs or {}
