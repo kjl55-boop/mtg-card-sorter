@@ -3,7 +3,7 @@ import pickle
 from pathlib import Path
 
 def build_phash_index(db_path, output_path):
-    """Build a structured phash index using hex strings (not raw bytes)."""
+    """Build a structured phash index using hex strings."""
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute("SELECT id, phash FROM cards WHERE phash IS NOT NULL")
@@ -12,7 +12,7 @@ def build_phash_index(db_path, output_path):
     for card_id, phash_str in cur.fetchall():
         if phash_str:
             index[card_id] = {
-                "phash": phash_str,  # hex string
+                "phash": phash_str,
                 "phash_len": len(phash_str),
                 "meta": {
                     "path": str(Path("data/scryfall_db/card_images") / f"{card_id}.jpg")

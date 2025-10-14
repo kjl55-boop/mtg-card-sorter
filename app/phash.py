@@ -23,7 +23,7 @@ log = utils.get_logger("phash")
 INDEX_PATH = Path("data/descriptors/phash_index.pkl")
 
 # Configurable defaults (move to config.py if you prefer)
-DEFAULT_PHASH_SIZE = 32
+DEFAULT_PHASH_SIZE = 8 #32
 DEFAULT_TOP_K = 5
 DEFAULT_THRESHOLD = 10
 DEFAULT_ORB_MIN_MATCHES = 8
@@ -31,7 +31,7 @@ DEFAULT_ORB_MIN_MATCHES = 8
 from PIL import Image
 import imagehash
 
-def compute_phash_from_gray(gray, phash_size=8):
+def compute_phash_from_gray(gray, phash_size=DEFAULT_PHASH_SIZE):
     pil_img = Image.fromarray(gray)
     return str(imagehash.phash(pil_img, hash_size=phash_size))  # hex string
 
