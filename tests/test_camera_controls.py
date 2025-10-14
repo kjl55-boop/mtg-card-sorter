@@ -24,6 +24,7 @@ Keybindings (preview window):
   r : revert all tuned/rpicam-like Picamera2 settings to neutral
   s : start interactive manual focus sweep
   h : print help
+  f : triggers autofocus using AfMode=Manual, AfMetering=Window, and a centered AfWindow region.
 """
 from pathlib import Path
 import shlex
@@ -730,6 +731,7 @@ def print_help():
         "  r : revert Picamera2 tuned and rpicam-like settings to neutral\n"
         "  s : start interactive manual focus sweep\n"
         "  h : print this help\n"
+        "  f: triggers autofocus using AfMode=Manual, AfMetering=Window, and a centered AfWindow region.\n"
     )
 
 
@@ -917,6 +919,26 @@ def main():
                 print("Returned from focus sweep; resuming preview.")
             if key == ord("h"):
                 print_help()
+            if key == ord("f"):
+                if use_pc2 and pc2 is not None:
+                    print("Triggering autofocus cycle...")
+                    try:
+                        from libcamera import controls
+                        pc2.set_controls({"AfMode": controls.AfModeEnum.Manual})
+                        size = pc2.preview_configuration["main"]["size"]
+                        fx, fy, fw, fh = 0.25, 0.25, 0.5, 0.5
+                        af_window = [(int(size[0]*fx), int(size[1]*fy), int(size[0]*fw), int(size[1]*fh))]
+                        pc2.set_controls({
+                            "AfMetering": controls.AfMeteringEnum.Window,
+                            "AfWindow": af_window
+                        })
+                        success = pc2.autofocus_cycle()
+                        print("Autofocus successful." if success else "Autofocus failed.")
+                    except Exception as exc:
+                        print("Autofocus cycle error:", exc)
+                else:
+                    print("Picamera2 not available or not running")
+
 
     finally:
         try:
