@@ -929,7 +929,7 @@ def main():
                         fx, fy, fw, fh = 0.25, 0.25, 0.5, 0.5
                         af_window = [(int(size[0]*fx), int(size[1]*fy), int(size[0]*fw), int(size[1]*fh))]
                         pc2.set_controls({
-                            "AfMetering": controls.AfMeteringEnum.Window,
+                            "AfMetering": controls.AfMeteringEnum.Auto,
                             "AfWindow": af_window
                         })
                         success = pc2.autofocus_cycle()
@@ -938,6 +938,7 @@ def main():
                         print("Autofocus cycle error:", exc)
                 else:
                     print("Picamera2 not available or not running")
+
 
 
 
