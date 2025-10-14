@@ -135,11 +135,13 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 # read control params at capture time
                 if controls_visible and controls_open():
                     c = read_controls()
-                    pad_x = c["pad_x"]; pad_y = c["pad_y"]
+                    #pad_x = c["pad_x"]; pad_y = c["pad_y"]
+                    pad_x = DEFAULTS["pad_x_pct"]; pad_y = DEFAULTS["pad_y_pct"]
                     top_pct = c["top_pct"]; mid_start = c["mid_start"]
                     mid_end = c["mid_end"]; bot_pct = c["bot_pct"]
                 else:
-                    pad_x = DEFAULTS["pad_x"]; pad_y = DEFAULTS["pad_y"]
+                    #pad_x = DEFAULTS["pad_x"]; pad_y = DEFAULTS["pad_y"]
+                    pad_x = DEFAULTS["pad_x_pct"]; pad_y = DEFAULTS["pad_y_pct"]
                     top_pct = DEFAULTS["top_pct"]; mid_start = DEFAULTS["mid_start_pct"]
                     mid_end = DEFAULTS["mid_end_pct"]; bot_pct = DEFAULTS["bot_pct"]
 
