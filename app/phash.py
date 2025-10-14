@@ -28,6 +28,13 @@ DEFAULT_TOP_K = 5
 DEFAULT_THRESHOLD = 10
 DEFAULT_ORB_MIN_MATCHES = 8
 
+from PIL import Image
+import imagehash
+
+def compute_phash_from_gray(gray, phash_size=32):
+    pil_img = Image.fromarray(gray)
+    return str(imagehash.phash(pil_img, hash_size=phash_size))
+'''
 def compute_phash_from_gray(gray_img: np.ndarray, phash_size: int = DEFAULT_PHASH_SIZE) -> np.ndarray:
     if gray_img is None:
         raise ValueError("gray image is None")
@@ -37,6 +44,7 @@ def compute_phash_from_gray(gray_img: np.ndarray, phash_size: int = DEFAULT_PHAS
         raise RuntimeError("phash computation failed")
     arr = np.asarray(h).flatten().astype(np.uint8)
     return arr
+'''
 
 def hamming_distance(a: np.ndarray, b: np.ndarray) -> int:
     a = np.asarray(a, dtype=np.uint8)
