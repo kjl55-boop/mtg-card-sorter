@@ -9,13 +9,13 @@ def build_phash_index(db_path, output_path):
     cur.execute("SELECT id, phash FROM cards WHERE phash IS NOT NULL")
     index = {}
 
-    for card_id, phash in cur.fetchall():
-        if phash:
+    for card_id, phash_str in cur.fetchall():
+        if phash_str:
+            phash_bytes = bytes.fromhex(phash_str)  # convert hex string to bytes
             index[card_id] = {
-                "phash": phash,
-                "phash_len": len(phash),
+                "phash": phash_bytes,
+                "phash_len": len(phash_bytes),
                 "meta": {
-                    # Update this path if your images are stored elsewhere
                     "path": str(Path("data/scryfall_db/card_images") / f"{card_id}.jpg")
                 }
             }
