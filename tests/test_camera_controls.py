@@ -628,17 +628,23 @@ def focus_sweep_interactive(pc2, cap, shots_per_position=SWEEP_SHOTS_PER_POS, de
 # ---------------------------------------------------------------------------
 
 def capture_highres_with_picamera2(pc2, out_path="out_highres.jpg", still_size=RPICAM_STILL_SIZE):
-    """Attempt a high-res still using Picamera2; revert preview config afterwards (best-effort)."""
     if pc2 is None:
         print("Picamera2 not available for highres capture")
         return False
     try:
-        # remember current config if available
+        # stop camera before reconfigure (required by some Picamera2 builds)
+        try:
+            pc2.stop()
+        except Exception:
+            pass
+
+        # save previous config if available
         try:
             prev_cfg = pc2.configuration
         except Exception:
             prev_cfg = None
-        # create still config
+
+        # configure still pipeline
         try:
             still_cfg = pc2.create_still_configuration({"size": still_size})
         except Exception:
@@ -647,28 +653,41 @@ def capture_highres_with_picamera2(pc2, out_path="out_highres.jpg", still_size=R
             pc2.configure(still_cfg)
         except Exception as e:
             print("configure(still) failed:", e)
+
+        # start camera after configure
         try:
             pc2.start()
         except Exception:
             pass
-        # apply rpicam-like controls to match rpicam-still pipeline
+
+        # apply rpicam-like controls
         try:
             apply_rpicam_like_settings(pc2, still_size=still_size, shutter_us=None, gain=None, af_mode_prefer="Continuous")
         except Exception:
             pass
-        time.sleep(0.25)  # warmup
-        arr = pc2.capture_array(timeout=10.0)
+
+        time.sleep(0.25)  # let AWB/AF/ISP settle
+
+        # capture_array on your build does not accept timeout; call it without timeout
+        arr = pc2.capture_array()
         if arr is None:
             raise RuntimeError("capture_array returned None")
+
         if cv2 is None:
             print("OpenCV required to save high-res array")
             return False
         bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
         cv2.imwrite(out_path, bgr)
         print("Saved high-res still ->", out_path)
-        # restore preview config if we had one
+
+        # restore preview config
         try:
             if prev_cfg is not None:
+                # stop before reconfigure
+                try:
+                    pc2.stop()
+                except Exception:
+                    pass
                 pc2.configure(prev_cfg)
                 try:
                     pc2.start()
@@ -676,10 +695,12 @@ def capture_highres_with_picamera2(pc2, out_path="out_highres.jpg", still_size=R
                     pass
         except Exception:
             pass
+
         return True
     except Exception as exc:
         print("High-res capture with Picamera2 failed:", exc)
         return False
+
 
 
 # ---------------------------------------------------------------------------
