@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 """
-Live preview tester with interactive focus controls and multishot sharpness selection.
-
-- Uses Picamera2 preview_array when available, falls back to OpenCV VideoCapture.
-- Multishot (burst) captures N frames, computes a Laplacian variance sharpness score,
-  and saves the best frame as best.jpg.
-- Adjustable burst size and inter-frame delay from the preview window.
+Live preview tester with interactive focus controls, Picamera2 tuning, multishot sharpness
+selection, and an interactive manual focus sweep.
 
 Keybindings (preview window):
   q : quit
   c : capture current frame -> out.jpg
-  m : single multishot burst -> best.jpg (prints per-frame scores)
-  M : continuous multishot bursts (press q to stop)
+  m : single multishot burst -> best.jpg
+  M : continuous multishot bursts until stopped
   ] : increase burst count (N)
   [ : decrease burst count (N)
   > : increase inter-frame delay (seconds)
@@ -19,19 +15,18 @@ Keybindings (preview window):
   p : probe picamera2 controls (terminal)
   g : probe v4l2 controls for /dev/video0 (terminal)
   a : toggle v4l2 autofocus (focus_auto) if supported
-  + : increase focus_absolute by step (v4l2)
-  - : decrease focus_absolute by step (v4l2)
-  0 : reset focus_absolute to baseline
+  + / - / 0 : v4l2 focus_absolute tweaks
+  t : apply Picamera2 tuned preview controls (best-effort)
+  r : revert Picamera2 controls to neutral (best-effort)
+  s : interactive manual focus sweep (rotate lens between positions, press Enter)
   h : print help
-  t : apply tuned preview controls (AfMode Continuous, AWB on, HighQuality NR, Sharpness, Contrast, Saturation)
-  r : revert tuned controls (attempt safe defaults / re-enable AWB/AF continuous)
 """
+from pathlib import Path
 import shlex
 import subprocess
 import sys
 import time
-from pathlib import Path
-from typing import Optional
+import csv
 
 try:
     import cv2
@@ -46,17 +41,26 @@ try:
 except Exception:
     Picamera2 = None
 
+# Config
 DEVICE = "/dev/video0"
 OUT_FILE = "out.jpg"
 BEST_FILE = "best.jpg"
-PREVIEW_SIZE = (2304,1296)#(1280, 720)
+PREVIEW_SIZE = (1280, 720)   # preview resolution
 FOCUS_STEP = 10
 FOCUS_BASELINE = 100
 
-# Multishot defaults (adjustable from preview)
+# Multishot defaults (adjustable)
 MULTISHOT_N = 8
 MULTISHOT_DELAY = 0.05  # seconds between frames
 
+# Sweep defaults
+SWEEP_POSITIONS = 8
+SWEEP_SHOTS_PER_POS = 12
+SWEEP_DELAY = 0.05
+
+# ---------------------------------------------------------------------------
+# Helpers: shell / v4l2 / picamera2 probes and sets
+# ---------------------------------------------------------------------------
 
 def run_cmd(cmd: str, timeout: float = 3.0) -> subprocess.CompletedProcess:
     return subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=timeout)
@@ -67,23 +71,21 @@ def has_v4l2_ctl() -> bool:
     return which("v4l2-ctl") is not None
 
 
-def v4l2_list_ctrls(device: str = DEVICE) -> Optional[str]:
+def v4l2_list_ctrls(device: str = DEVICE):
     if not has_v4l2_ctl():
         print("v4l2-ctl not found on PATH; install v4l-utils")
-        return None
+        return
     try:
         cp = run_cmd(f"v4l2-ctl -d {shlex.quote(device)} --list-ctrls")
         if cp.returncode != 0:
             print("v4l2-ctl error:", cp.stderr.strip())
-            return None
+            return
         print(cp.stdout.strip())
-        return cp.stdout
     except Exception as exc:
         print("v4l2-ctl invocation failed:", exc)
-        return None
 
 
-def v4l2_get(device: str, ctrl: str) -> Optional[int]:
+def v4l2_get(device: str, ctrl: str):
     if not has_v4l2_ctl():
         return None
     try:
@@ -113,7 +115,7 @@ def v4l2_set(device: str, ctrl: str, val) -> bool:
         return False
 
 
-def probe_picamera2_controls(pc2) -> None:
+def probe_picamera2_controls(pc2):
     if pc2 is None:
         print("Picamera2 not available")
         return
@@ -136,25 +138,10 @@ def probe_picamera2_controls(pc2) -> None:
     print("No Picamera2 controls available")
 
 
-def start_picamera2(preview_size=PREVIEW_SIZE, warmup=0.2):
-    if Picamera2 is None:
-        return None
-    try:
-        pc2 = Picamera2()
-        cfg = pc2.create_preview_configuration({"size": preview_size})
-        pc2.configure(cfg)
-        pc2.start()
-        time.sleep(warmup)
-        return pc2
-    except Exception as exc:
-        print("Picamera2 start failed:", exc)
-        try:
-            pc2.stop()
-        except Exception:
-            pass
-        return None
+# ---------------------------------------------------------------------------
+# Picamera2 tuning functions (best-effort, safe)
+# ---------------------------------------------------------------------------
 
-# --- add near other Picamera2 helpers ---
 def apply_picamera2_tuned_controls(pc2):
     """Best-effort: set tuned preview controls on Picamera2 instance."""
     if pc2 is None:
@@ -165,16 +152,19 @@ def apply_picamera2_tuned_controls(pc2):
     except Exception:
         pc2_controls = None
 
-    # Try to (re)configure preview size first if desired
+    # Try to reconfigure preview to ensure proper pipeline; ignore failures
     try:
         cfg = pc2.create_preview_configuration({"size": PREVIEW_SIZE})
         pc2.configure(cfg)
-        pc2.start()
+        try:
+            pc2.start()
+        except Exception:
+            pass
     except Exception:
-        # If reconfigure/start fails, continue and try to set controls on running pc2
         pass
 
     ctrl_payload = {}
+
     # AF mode
     try:
         if pc2_controls and hasattr(pc2_controls, "AfModeEnum"):
@@ -188,7 +178,6 @@ def apply_picamera2_tuned_controls(pc2):
 
     # AWB
     try:
-        # prefer AwbModeEnum.Auto, else try simple boolean key
         if pc2_controls and hasattr(pc2_controls, "AwbModeEnum") and hasattr(pc2_controls.AwbModeEnum, "Auto"):
             ctrl_payload["AwbMode"] = pc2_controls.AwbModeEnum.Auto
         else:
@@ -196,20 +185,17 @@ def apply_picamera2_tuned_controls(pc2):
     except Exception as exc:
         print("AWB control handling failed:", exc)
 
-    # Noise reduction (some picamera2 builds expose draft namespace)
+    # Noise reduction - try draft namespace if present
     try:
-        nr_mode = None
         if pc2_controls and hasattr(pc2_controls, "draft") and hasattr(pc2_controls.draft, "NoiseReductionModeEnum"):
             nr_enum = pc2_controls.draft.NoiseReductionModeEnum
             if hasattr(nr_enum, "HighQuality"):
-                nr_mode = nr_enum.HighQuality
-        if nr_mode is not None:
-            ctrl_payload["NoiseReductionMode"] = nr_mode
+                ctrl_payload["NoiseReductionMode"] = nr_enum.HighQuality
     except Exception as exc:
         print("Noise reduction handling failed:", exc)
 
-    # Simple numeric image-tuning controls (may or may not exist)
-    # Values from your example: Sharpness 2.0, Contrast 1.5, Saturation 1.5
+    # Image tuning numeric controls
+    # Values chosen to mirror your example
     for k, v in (("Sharpness", 2.0), ("Contrast", 1.5), ("Saturation", 1.5)):
         try:
             ctrl_payload[k] = v
@@ -260,7 +246,7 @@ def revert_picamera2_controls(pc2):
     except Exception:
         pass
 
-    # Reset numeric tuning to neutral values where sensible
+    # Neutral numeric tuning
     for k, v in (("Sharpness", 0.0), ("Contrast", 1.0), ("Saturation", 1.0)):
         payload[k] = v
 
@@ -272,6 +258,10 @@ def revert_picamera2_controls(pc2):
         print("Failed to revert controls:", exc)
         return False
 
+
+# ---------------------------------------------------------------------------
+# Capture, scoring, multishot
+# ---------------------------------------------------------------------------
 
 def capture_and_save(frame, name=OUT_FILE):
     if frame is None:
@@ -344,6 +334,79 @@ def run_multishot(pc2, cap, n, delay, out_path=BEST_FILE):
     return True
 
 
+# ---------------------------------------------------------------------------
+# Interactive manual focus sweep
+# ---------------------------------------------------------------------------
+
+def focus_sweep_interactive(pc2, cap, shots_per_position=SWEEP_SHOTS_PER_POS, delay=SWEEP_DELAY, positions=SWEEP_POSITIONS, out_dir="focus_sweep"):
+    """
+    Interactive manual sweep:
+    - User manually rotates lens between positions.
+    - Press Enter to capture a multishot burst at current lens setting.
+    - Type 'q' then Enter to quit early.
+    - Saves best image per position and summary CSV.
+    """
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    summary = []
+    print("FOCUS SWEEP MODE")
+    print("  Instructions:")
+    print("   - For each mechanical lens position: rotate lens, place card, press Enter to capture.")
+    print("   - Type 'q' + Enter to quit early.")
+    print()
+    pos = 0
+    while pos < positions:
+        cmd = input(f"Position {pos+1}/{positions}: rotate lens to next pos, then press Enter (or 'q' to quit): ")
+        if cmd.strip().lower() == "q":
+            break
+        pos += 1
+        print(f"Capturing {shots_per_position} frames at position {pos} ...")
+        # capture frames
+        frames = []
+        if pc2 is not None:
+            for i in range(shots_per_position):
+                try:
+                    arr = pc2.capture_array()
+                    frame = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+                except Exception as exc:
+                    print("pc2 capture failed:", exc)
+                    break
+                frames.append(frame)
+                time.sleep(delay)
+        else:
+            for i in range(shots_per_position):
+                ret, frame = cap.read()
+                if not ret:
+                    print("cap read failed")
+                    break
+                frames.append(frame)
+                time.sleep(delay)
+        if not frames:
+            print("No frames captured for this position, skipping")
+            continue
+        # score and pick best
+        scores = [sharpness_score(f) for f in frames]
+        best_idx = int(max(range(len(scores)), key=lambda i: scores[i]))
+        best_frame = frames[best_idx]
+        fname = f"pos{pos:02d}_best.jpg"
+        fpath = Path(out_dir) / fname
+        cv2.imwrite(str(fpath), best_frame)
+        print(f"Saved best frame for pos {pos}: {fpath}  score={scores[best_idx]:.2f}")
+        summary.append((pos, scores[best_idx], str(fpath)))
+    # write CSV
+    csv_path = Path(out_dir) / "summary.csv"
+    with open(csv_path, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["position", "best_score", "best_image"])
+        for r in summary:
+            writer.writerow(r)
+    print("Sweep complete. Summary written to", csv_path)
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# UI / main loop
+# ---------------------------------------------------------------------------
+
 def print_help():
     print(
         "\nPreview controls:\n"
@@ -358,10 +421,31 @@ def print_help():
         "  p : probe picamera2 controls (terminal)\n"
         "  g : probe v4l2 controls for /dev/video0 (terminal)\n"
         "  a : toggle v4l2 autofocus (focus_auto)\n"
-        "  + / - / 0 : v4l2 focus_absolute tweaks\n        h : print this help\n"
-        "  t : apply tuned preview controls (AfMode Continuous, AWB on, HighQuality NR, Sharpness, Contrast, Saturation)\n"
-        "  r : revert tuned controls (attempt safe defaults / re-enable AWB/AF continuous)\n"
+        "  + / - / 0 : v4l2 focus_absolute tweaks\n"
+        "  t : apply Picamera2 tuned controls\n"
+        "  r : revert Picamera2 controls\n"
+        "  s : start interactive manual focus sweep\n"
+        "  h : print this help\n"
     )
+
+
+def start_picamera2(preview_size=PREVIEW_SIZE, warmup=0.2):
+    if Picamera2 is None:
+        return None
+    try:
+        pc2 = Picamera2()
+        cfg = pc2.create_preview_configuration({"size": preview_size})
+        pc2.configure(cfg)
+        pc2.start()
+        time.sleep(warmup)
+        return pc2
+    except Exception as exc:
+        print("Picamera2 start failed:", exc)
+        try:
+            pc2.stop()
+        except Exception:
+            pass
+        return None
 
 
 def main():
@@ -494,18 +578,19 @@ def main():
                 print("Continuous multishot ->", continuous_multishot)
             if continuous_multishot:
                 run_multishot(pc2 if use_pc2 else None, cap, MULTISHOT_N, MULTISHOT_DELAY, BEST_FILE)
-                # small pause to allow UI responsiveness
                 time.sleep(0.1)
-            if key == ord("h"):
-                print_help()
             if key == ord("t"):
-                # apply tuned controls
                 ok = apply_picamera2_tuned_controls(pc2 if use_pc2 else None)
                 print("Tuned controls applied?" , ok)
             if key == ord("r"):
                 ok = revert_picamera2_controls(pc2 if use_pc2 else None)
                 print("Revert controls applied?", ok)
-
+            if key == ord("s"):
+                print("Starting interactive focus sweep. This will pause preview until sweep completes.")
+                focus_sweep_interactive(pc2 if use_pc2 else None, cap, shots_per_position=MULTISHOT_N, delay=MULTISHOT_DELAY, positions=SWEEP_POSITIONS, out_dir="focus_sweep")
+                print("Returned from focus sweep; resuming preview.")
+            if key == ord("h"):
+                print_help()
 
     finally:
         try:
