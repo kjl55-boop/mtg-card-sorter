@@ -11,9 +11,10 @@ Public:
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import Callable, Optional, Dict, List, Tuple
+from typing import Callable, Optional, Dict, List, Tuple, Any
 from PIL import Image
 import imagehash
+import pickle
 from imagehash import hex_to_hash
 from . import utils
 
@@ -28,6 +29,17 @@ DEFAULT_THRESHOLD = 10
 DEFAULT_ORB_MIN_MATCHES = 8
 
 # --- Core pHash logic ---
+
+def load_index(path: Path = INDEX_PATH) -> dict:
+    """Load phash index from pickle file."""
+    try:
+        with open(path, "rb") as f:
+            index = pickle.load(f)
+        log.info("Loaded phash index with %d entries from %s", len(index), path)
+        return index
+    except Exception as e:
+        log.warning("Failed to load index from %s: %s", path, e)
+        return {}
 
 def compute_phash_from_gray(gray, phash_size=DEFAULT_PHASH_SIZE) -> str:
     """Compute perceptual hash from grayscale image and return as hex string."""
@@ -88,7 +100,7 @@ def match_card(card_bgr: np.ndarray,
                preprocess_kwargs: Optional[Dict] = None,
                top_k: int = DEFAULT_TOP_K,
                threshold: int = DEFAULT_THRESHOLD,
-               verify_orb: bool = True) -> Optional[Dict[str, any]]:
+               verify_orb: bool = True) -> Optional[Dict[str, Any]]:
     if index is None:
         raise ValueError("index must be provided")
     preprocess_kwargs = preprocess_kwargs or {}
