@@ -101,20 +101,23 @@ def build_index_from_folder(images_folder: Path,
     save_index(index, Path(out_path))
     return index
 
-def match_phash(query_phash, index, top_k=5, threshold=10):
-    from imagehash import hex_to_hash
+#import numpy as np
+from imagehash import ImageHash
 
-    query_hash = hex_to_hash(query_phash)
+def match_phash(query_phash, index, top_k=5, threshold=10):
+    query_hash = ImageHash(np.frombuffer(bytes.fromhex(query_phash), dtype=np.uint8))
     candidates = []
 
     for card_id, rec in index.items():
-        db_phash = rec["phash"]
-        dist = query_hash - hex_to_hash(db_phash)
+        db_bytes = rec["phash"]
+        db_hash = ImageHash(np.frombuffer(db_bytes, dtype=np.uint8))
+        dist = query_hash - db_hash
         if dist <= threshold:
             candidates.append((card_id, rec, dist))
 
     candidates.sort(key=lambda x: x[2])
     return candidates[:top_k]
+
 
 '''
 def match_phash(query_phash: np.ndarray,
