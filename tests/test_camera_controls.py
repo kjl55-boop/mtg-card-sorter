@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
 Live preview tester with interactive focus controls, Picamera2 tuning, multishot sharpness
-selection, and an interactive manual focus sweep.
+selection, interactive manual focus sweep, and rpicam-still style setting application.
 
 Keybindings (preview window):
   q : quit
   c : capture current frame -> out.jpg
-  m : single multishot burst -> best.jpg
+  z : single rpicam-still capture (if available)
+  Z : multishot using rpicam-still (if available)
+  m : single multishot burst -> best.jpg (OpenCV/Picamera2)
   M : continuous multishot bursts until stopped
   ] : increase burst count (N)
   [ : decrease burst count (N)
@@ -14,11 +16,13 @@ Keybindings (preview window):
   < : decrease inter-frame delay (seconds)
   p : probe picamera2 controls (terminal)
   g : probe v4l2 controls for /dev/video0 (terminal)
-  a : toggle v4l2 autofocus (focus_auto) if supported
+  a : toggle v4l2 autofocus (focus_auto)
   + / - / 0 : v4l2 focus_absolute tweaks
-  t : apply Picamera2 tuned preview controls (best-effort)
+  t : apply Picamera2 tuned controls (best-effort)
   r : revert Picamera2 controls to neutral (best-effort)
-  s : interactive manual focus sweep (rotate lens between positions, press Enter)
+  y : apply rpicam-still–like settings (still-size, exposure, gain, AF/AWB/NR/tonal)
+  u : revert rpicam-like settings to neutral
+  s : start interactive manual focus sweep
   h : print help
 """
 from pathlib import Path
@@ -27,6 +31,8 @@ import subprocess
 import sys
 import time
 import csv
+import shutil
+import datetime
 
 try:
     import cv2
@@ -45,7 +51,7 @@ except Exception:
 DEVICE = "/dev/video0"
 OUT_FILE = "out.jpg"
 BEST_FILE = "best.jpg"
-PREVIEW_SIZE = (1280, 720)   # preview resolution
+PREVIEW_SIZE = (1280, 720)   # preview resolution for live preview
 FOCUS_STEP = 10
 FOCUS_BASELINE = 100
 
@@ -57,6 +63,10 @@ MULTISHOT_DELAY = 0.05  # seconds between frames
 SWEEP_POSITIONS = 8
 SWEEP_SHOTS_PER_POS = 12
 SWEEP_DELAY = 0.05
+
+# rpicam defaults to mimic
+RPICAM_STILL_SIZE = (2304, 1296)
+RPICAM_STILL_TIMEOUT_MS = 1000
 
 # ---------------------------------------------------------------------------
 # Helpers: shell / v4l2 / picamera2 probes and sets
@@ -143,7 +153,7 @@ def probe_picamera2_controls(pc2):
 # ---------------------------------------------------------------------------
 
 def apply_picamera2_tuned_controls(pc2):
-    """Best-effort: set tuned preview controls on Picamera2 instance."""
+    """Best-effort: set tuned preview controls on Picamera2 instance (your earlier example)."""
     if pc2 is None:
         print("Picamera2 not available; cannot apply tuned controls")
         return False
@@ -152,7 +162,6 @@ def apply_picamera2_tuned_controls(pc2):
     except Exception:
         pc2_controls = None
 
-    # Try to reconfigure preview to ensure proper pipeline; ignore failures
     try:
         cfg = pc2.create_preview_configuration({"size": PREVIEW_SIZE})
         pc2.configure(cfg)
@@ -165,7 +174,6 @@ def apply_picamera2_tuned_controls(pc2):
 
     ctrl_payload = {}
 
-    # AF mode
     try:
         if pc2_controls and hasattr(pc2_controls, "AfModeEnum"):
             enum = pc2_controls.AfModeEnum
@@ -176,7 +184,6 @@ def apply_picamera2_tuned_controls(pc2):
     except Exception as exc:
         print("AF enum handling failed:", exc)
 
-    # AWB
     try:
         if pc2_controls and hasattr(pc2_controls, "AwbModeEnum") and hasattr(pc2_controls.AwbModeEnum, "Auto"):
             ctrl_payload["AwbMode"] = pc2_controls.AwbModeEnum.Auto
@@ -185,7 +192,6 @@ def apply_picamera2_tuned_controls(pc2):
     except Exception as exc:
         print("AWB control handling failed:", exc)
 
-    # Noise reduction - try draft namespace if present
     try:
         if pc2_controls and hasattr(pc2_controls, "draft") and hasattr(pc2_controls.draft, "NoiseReductionModeEnum"):
             nr_enum = pc2_controls.draft.NoiseReductionModeEnum
@@ -194,8 +200,6 @@ def apply_picamera2_tuned_controls(pc2):
     except Exception as exc:
         print("Noise reduction handling failed:", exc)
 
-    # Image tuning numeric controls
-    # Values chosen to mirror your example
     for k, v in (("Sharpness", 2.0), ("Contrast", 1.5), ("Saturation", 1.5)):
         try:
             ctrl_payload[k] = v
@@ -216,7 +220,7 @@ def apply_picamera2_tuned_controls(pc2):
 
 
 def revert_picamera2_controls(pc2):
-    """Best-effort: attempt to revert controls to safe defaults."""
+    """Best-effort: attempt to revert Picamera2 tuned controls to safe defaults."""
     if pc2 is None:
         print("Picamera2 not available; cannot revert controls")
         return False
@@ -226,7 +230,6 @@ def revert_picamera2_controls(pc2):
         pc2_controls = None
 
     payload = {}
-    # Try to set AF back to continuous/auto if available
     try:
         if pc2_controls and hasattr(pc2_controls, "AfModeEnum"):
             enum = pc2_controls.AfModeEnum
@@ -237,7 +240,6 @@ def revert_picamera2_controls(pc2):
     except Exception:
         pass
 
-    # Re-enable AWB
     try:
         if pc2_controls and hasattr(pc2_controls, "AwbModeEnum") and hasattr(pc2_controls.AwbModeEnum, "Auto"):
             payload["AwbMode"] = pc2_controls.AwbModeEnum.Auto
@@ -246,7 +248,6 @@ def revert_picamera2_controls(pc2):
     except Exception:
         pass
 
-    # Neutral numeric tuning
     for k, v in (("Sharpness", 0.0), ("Contrast", 1.0), ("Saturation", 1.0)):
         payload[k] = v
 
@@ -260,7 +261,236 @@ def revert_picamera2_controls(pc2):
 
 
 # ---------------------------------------------------------------------------
-# Capture, scoring, multishot
+# rpicam-like settings (apply/revert) to mirror rpicam-still pipeline behavior
+# ---------------------------------------------------------------------------
+
+def apply_rpicam_like_settings(pc2,
+                              still_size=RPICAM_STILL_SIZE,
+                              shutter_us: int | None = None,
+                              gain: float | None = None,
+                              af_mode_prefer="Continuous"):
+    """
+    Best-effort: apply settings intended to match rpicam-still output.
+    - still_size: target still/preview resolution to configure
+    - shutter_us: microseconds for shutter (None leaves AE auto)
+    - gain: numeric gain/ISO hint (None leaves AGC)
+    - af_mode_prefer: "Continuous" or "Auto"
+    Returns True if at least one control appears to have been applied.
+    """
+    if pc2 is None:
+        print("Picamera2 not available")
+        return False
+
+    applied = {}
+    try:
+        # attempt to reconfigure preview/still pipeline similar to rpicam-still
+        try:
+            cfg = pc2.create_preview_configuration({"size": still_size})
+            pc2.configure(cfg)
+            try:
+                pc2.start()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        try:
+            from picamera2 import controls as pc2_controls
+        except Exception:
+            pc2_controls = None
+
+        ctrl_payload = {}
+
+        # Exposure / shutter controls mapping
+        if shutter_us is not None:
+            for k in ("Shutter", "ExposureTime", "ExposureTimeUs", "SensorExposureTime"):
+                try:
+                    ctrl_payload[k] = int(shutter_us)
+                    applied[k] = shutter_us
+                    break
+                except Exception:
+                    pass
+
+        # Gain mapping
+        if gain is not None:
+            for k in ("AnalogueGain", "Gain", "ExposureValue", "ISO"):
+                try:
+                    ctrl_payload[k] = float(gain)
+                    applied[k] = gain
+                    break
+                except Exception:
+                    pass
+
+        # AF mode
+        try:
+            if pc2_controls and hasattr(pc2_controls, "AfModeEnum"):
+                enum = pc2_controls.AfModeEnum
+                if hasattr(enum, af_mode_prefer):
+                    ctrl_payload["AfMode"] = getattr(enum, af_mode_prefer)
+                    applied["AfMode"] = af_mode_prefer
+                elif hasattr(enum, "Continuous"):
+                    ctrl_payload["AfMode"] = enum.Continuous
+                    applied["AfMode"] = "Continuous"
+        except Exception:
+            pass
+
+        # AWB
+        try:
+            if pc2_controls and hasattr(pc2_controls, "AwbModeEnum") and hasattr(pc2_controls.AwbModeEnum, "Auto"):
+                ctrl_payload["AwbMode"] = pc2_controls.AwbModeEnum.Auto
+                applied["AwbMode"] = "Auto"
+            else:
+                ctrl_payload["AwbEnable"] = True
+                applied["AwbEnable"] = True
+        except Exception:
+            pass
+
+        # Noise reduction (draft)
+        try:
+            if pc2_controls and hasattr(pc2_controls, "draft") and hasattr(pc2_controls.draft, "NoiseReductionModeEnum"):
+                nr_enum = pc2_controls.draft.NoiseReductionModeEnum
+                if hasattr(nr_enum, "HighQuality"):
+                    ctrl_payload["NoiseReductionMode"] = nr_enum.HighQuality
+                    applied["NoiseReductionMode"] = "HighQuality"
+        except Exception:
+            pass
+
+        # tonal tuning
+        for k, v in (("Sharpness", 2.0), ("Contrast", 1.5), ("Saturation", 1.5)):
+            try:
+                ctrl_payload[k] = v
+                applied[k] = v
+            except Exception:
+                pass
+
+        if not ctrl_payload:
+            print("No Picamera2-compatible controls found to apply rpicam-like settings")
+            return False
+
+        try:
+            pc2.set_controls(ctrl_payload)
+            print("Applied rpicam-like controls:", ", ".join(f"{k}={v}" for k, v in applied.items()))
+            return True
+        except Exception as exc:
+            print("pc2.set_controls failed:", exc)
+            ok_any = False
+            for k, v in ctrl_payload.items():
+                try:
+                    pc2.set_controls({k: v})
+                    print(f"  set {k} OK")
+                    ok_any = True
+                except Exception as e2:
+                    print(f"  set {k} failed:", e2)
+            return ok_any
+
+    except Exception as exc:
+        print("apply_rpicam_like_settings error:", exc)
+        return False
+
+
+def revert_rpicam_like_settings(pc2):
+    """Try to revert rpicam-like settings to neutral defaults."""
+    if pc2 is None:
+        print("Picamera2 not available")
+        return False
+    try:
+        from picamera2 import controls as pc2_controls
+    except Exception:
+        pc2_controls = None
+
+    payload = {}
+    try:
+        if pc2_controls and hasattr(pc2_controls, "AfModeEnum"):
+            enum = pc2_controls.AfModeEnum
+            if hasattr(enum, "Continuous"):
+                payload["AfMode"] = enum.Continuous
+        if pc2_controls and hasattr(pc2_controls, "AwbModeEnum") and hasattr(pc2_controls.AwbModeEnum, "Auto"):
+            payload["AwbMode"] = pc2_controls.AwbModeEnum.Auto
+        else:
+            payload["AwbEnable"] = True
+    except Exception:
+        pass
+
+    for k, v in (("Sharpness", 0.0), ("Contrast", 1.0), ("Saturation", 1.0)):
+        payload[k] = v
+
+    try:
+        pc2.set_controls(payload)
+        print("Reverted rpicam-like controls to neutral")
+        return True
+    except Exception as exc:
+        print("Failed to revert controls:", exc)
+        return False
+
+
+# ---------------------------------------------------------------------------
+# rpicam-still invocation helpers (single-shot + multishot path)
+# ---------------------------------------------------------------------------
+
+def has_rpicam_still() -> bool:
+    return shutil.which("rpicam-still") is not None
+
+
+def capture_with_rpicam(out_path: str = "out.jpg", timeout_ms: int = RPICAM_STILL_TIMEOUT_MS) -> bool:
+    if not has_rpicam_still():
+        print("rpicam-still not found on PATH")
+        return False
+    cmd = ["rpicam-still", "-o", out_path, "-t", str(int(timeout_ms))]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=(timeout_ms / 1000.0) + 5.0)
+        print(f"rpicam-still capture saved -> {out_path}")
+        return True
+    except subprocess.CalledProcessError as exc:
+        print("rpicam-still failed:", exc)
+        return False
+    except Exception as exc:
+        print("rpicam-still invocation error:", exc)
+        return False
+
+
+def multishot_with_rpicam(out_basename: str = "rpicam_best.jpg", n: int = 5, delay: float = 0.05, working_dir: str = "/tmp/rpicam_multishot"):
+    Path(working_dir).mkdir(parents=True, exist_ok=True)
+    captured = []
+    for i in range(n):
+        fname = Path(working_dir) / f"rpicam_{i:03d}.jpg"
+        ok = capture_with_rpicam(str(fname), timeout_ms=int(max(200, delay * 1000)))
+        if not ok:
+            print(f"rpicam-still failed at shot {i}, skipping remaining shots")
+            break
+        time.sleep(0.02)
+        img = None
+        if cv2 is not None:
+            img = cv2.imread(str(fname))
+        captured.append((str(fname), img))
+        time.sleep(delay)
+    if not captured:
+        print("No rpicam captures produced")
+        return False
+    best_idx = None
+    best_score = -1.0
+    for idx, (p, img) in enumerate(captured):
+        if img is None:
+            continue
+        s = sharpness_score(img)
+        print(f"rpicam shot {idx}: {p} score={s:.2f}")
+        if s > best_score:
+            best_score = s
+            best_idx = idx
+    if best_idx is None:
+        last = captured[-1][0]
+        dst = Path(out_basename)
+        shutil.copy(last, dst)
+        print(f"No readable frames for scoring; copied last frame to {dst}")
+        return True
+    best_path = Path(captured[best_idx][0])
+    dst = Path(out_basename)
+    shutil.copy(best_path, dst)
+    print(f"Saved best rpicam frame {best_path} -> {dst} (score={best_score:.2f})")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Capture, scoring, multishot (OpenCV/Picamera2)
 # ---------------------------------------------------------------------------
 
 def capture_and_save(frame, name=OUT_FILE):
@@ -339,13 +569,6 @@ def run_multishot(pc2, cap, n, delay, out_path=BEST_FILE):
 # ---------------------------------------------------------------------------
 
 def focus_sweep_interactive(pc2, cap, shots_per_position=SWEEP_SHOTS_PER_POS, delay=SWEEP_DELAY, positions=SWEEP_POSITIONS, out_dir="focus_sweep"):
-    """
-    Interactive manual sweep:
-    - User manually rotates lens between positions.
-    - Press Enter to capture a multishot burst at current lens setting.
-    - Type 'q' then Enter to quit early.
-    - Saves best image per position and summary CSV.
-    """
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     summary = []
     print("FOCUS SWEEP MODE")
@@ -360,7 +583,6 @@ def focus_sweep_interactive(pc2, cap, shots_per_position=SWEEP_SHOTS_PER_POS, de
             break
         pos += 1
         print(f"Capturing {shots_per_position} frames at position {pos} ...")
-        # capture frames
         frames = []
         if pc2 is not None:
             for i in range(shots_per_position):
@@ -383,7 +605,6 @@ def focus_sweep_interactive(pc2, cap, shots_per_position=SWEEP_SHOTS_PER_POS, de
         if not frames:
             print("No frames captured for this position, skipping")
             continue
-        # score and pick best
         scores = [sharpness_score(f) for f in frames]
         best_idx = int(max(range(len(scores)), key=lambda i: scores[i]))
         best_frame = frames[best_idx]
@@ -392,7 +613,6 @@ def focus_sweep_interactive(pc2, cap, shots_per_position=SWEEP_SHOTS_PER_POS, de
         cv2.imwrite(str(fpath), best_frame)
         print(f"Saved best frame for pos {pos}: {fpath}  score={scores[best_idx]:.2f}")
         summary.append((pos, scores[best_idx], str(fpath)))
-    # write CSV
     csv_path = Path(out_dir) / "summary.csv"
     with open(csv_path, "w", newline="") as fh:
         writer = csv.writer(fh)
@@ -412,6 +632,8 @@ def print_help():
         "\nPreview controls:\n"
         "  q : quit\n"
         "  c : capture current frame -> out.jpg\n"
+        "  z : single rpicam-still capture (if available)\n"
+        "  Z : multishot using rpicam-still (if available)\n"
         "  m : single multishot burst -> best.jpg\n"
         "  M : continuous multishot bursts until stopped\n"
         "  ] : increase burst count (N)\n"
@@ -424,6 +646,8 @@ def print_help():
         "  + / - / 0 : v4l2 focus_absolute tweaks\n"
         "  t : apply Picamera2 tuned controls\n"
         "  r : revert Picamera2 controls\n"
+        "  y : apply rpicam-still like settings (still-size, exposure/gain hints, AF/AWB/NR/tonal)\n"
+        "  u : revert rpicam-like settings\n"
         "  s : start interactive manual focus sweep\n"
         "  h : print this help\n"
     )
@@ -519,7 +743,6 @@ def main():
                 break
 
             if cv2 is not None:
-                # overlay status
                 status = f"N={MULTISHOT_N} delay={MULTISHOT_DELAY:.3f}s"
                 cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
                 cv2.imshow(window, frame)
@@ -585,6 +808,24 @@ def main():
             if key == ord("r"):
                 ok = revert_picamera2_controls(pc2 if use_pc2 else None)
                 print("Revert controls applied?", ok)
+            if key == ord("y"):
+                # apply rpicam-like settings (still-size, but only controls applied; still capture still uses rpicam-still if desired)
+                ok = apply_rpicam_like_settings(pc2 if use_pc2 else None, still_size=RPICAM_STILL_SIZE, shutter_us=None, gain=None, af_mode_prefer="Continuous")
+                print("Applied rpicam-like settings?", ok)
+            if key == ord("u"):
+                ok = revert_rpicam_like_settings(pc2 if use_pc2 else None)
+                print("Reverted rpicam-like settings?", ok)
+            if key == ord("z"):
+                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                outname = f"rpicam_{ts}.jpg"
+                ok = capture_with_rpicam(outname, timeout_ms=RPICAM_STILL_TIMEOUT_MS)
+                print("rpicam-still single capture saved:" if ok else "rpicam-still capture failed")
+            if key == ord("Z"):
+                print(f"Running rpicam multishot N={MULTISHOT_N} delay={MULTISHOT_DELAY:.3f}s")
+                ok = multishot_with_rpicam(out_basename="rpicam_best.jpg", n=MULTISHOT_N, delay=MULTISHOT_DELAY)
+                print("rpicam multishot done:", ok)
+            if key == ord("m"):
+                run_multishot(pc2 if use_pc2 else None, cap, MULTISHOT_N, MULTISHOT_DELAY, BEST_FILE)
             if key == ord("s"):
                 print("Starting interactive focus sweep. This will pause preview until sweep completes.")
                 focus_sweep_interactive(pc2 if use_pc2 else None, cap, shots_per_position=MULTISHOT_N, delay=MULTISHOT_DELAY, positions=SWEEP_POSITIONS, out_dir="focus_sweep")
