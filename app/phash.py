@@ -53,7 +53,7 @@ def match_phash(query_phash: str,
     """Match query phash (hex string) against index of hex strings."""
     query_hash = hex_to_hash(query_phash)
     candidates = []
-
+    log.debug("Query shape: %s, DB shape: %s", query_hash.hash.shape, db_hash.hash.shape)
     for card_id, rec in index.items():
         db_phash = rec["phash"]
         db_hash = hex_to_hash(db_phash)
@@ -106,6 +106,7 @@ def match_card(card_bgr: np.ndarray,
     preprocess_kwargs = preprocess_kwargs or {}
     gray = preprocess_fn(card_bgr, **preprocess_kwargs) if preprocess_fn else cv2.cvtColor(card_bgr, cv2.COLOR_BGR2GRAY)
     qph = compute_phash_from_gray(gray)
+    log.debug("Query phash: %s", qph)
     candidates = match_phash(qph, index, top_k=top_k, threshold=threshold)
     if not candidates:
         return None
