@@ -51,7 +51,7 @@ except Exception:
 DEVICE = "/dev/video0"
 OUT_FILE = "out.jpg"
 BEST_FILE = "best.jpg"
-PREVIEW_SIZE = (1280, 720)   # preview resolution for live preview
+PREVIEW_SIZE = (2304,1296)#(1280, 720)   # preview resolution for live preview
 FOCUS_STEP = 10
 FOCUS_BASELINE = 100
 
