@@ -101,3 +101,9 @@ class ScryfallDBBuilder:
         self.build_db(cards)
         self.build_index()
         self.logger.info("Build complete for set %s", self.set_code)
+
+if __name__ == "__main__":
+    builder = ScryfallDBBuilder(set_code="m20")
+    builder.run()
+    print("✅ Build complete.")
+
