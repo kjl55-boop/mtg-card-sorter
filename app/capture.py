@@ -85,15 +85,7 @@ class Camera:
             cfg = pc2.create_preview_configuration({"size": self.preview_size})
             pc2.configure(cfg)
             pc2.start()
-            from libcamera import controls
-
-            pc2.set_controls({
-                "AfMode": controls.AfModeEnum.Manual,
-                "AfMetering": controls.AfMeteringEnum.Auto
-            })
-            print("Running autofocus cycle at startup...")
-            success = pc2.autofocus_cycle()
-            print("Autofocus successful." if success else "Autofocus failed.")
+            self._run_autofocus(pc2)
             time.sleep(self.warmup_sec)
             self.backend_name = "picamera2"
             self._handle = pc2
@@ -102,6 +94,19 @@ class Camera:
         except Exception as exc:
             utils.log_exception(log, exc, "Failed to initialize Picamera2")
             return None
+
+    def _run_autofocus(self, pc2):
+        try:
+            from libcamera import controls
+            pc2.set_controls({
+                "AfMode": controls.AfModeEnum.Manual,
+                "AfMetering": controls.AfMeteringEnum.Auto
+            })
+            log.info("Running autofocus cycle at startup...")
+            success = pc2.autofocus_cycle()
+            log.info("Autofocus successful." if success else "Autofocus failed.")
+        except Exception as exc:
+            utils.log_exception(log, exc, "Autofocus cycle failed")
 
     def _open_libcamera_jpeg(self):
         if not shutil.which("libcamera-jpeg"):
@@ -146,6 +151,10 @@ class Camera:
             self._thread = threading.Thread(target=self._bg_loop, daemon=True)
             self._thread.start()
             log.debug("Background read thread started")
+
+    def autofocus(self):
+        if self.backend_name == "picamera2" and self._handle is not None:
+            self._run_autofocus(self._handle)
 
     def _bg_loop(self):
         while self._running:

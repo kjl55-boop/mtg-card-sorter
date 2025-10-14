@@ -12,11 +12,6 @@ Keys:
 from pathlib import Path
 import time
 import cv2
-try:
-    from libcamera import controls
-except ImportError:
-    controls = None
-
 
 from . import capture, crop, ocr, config, utils
 from .matcher import Matcher, MatchResult
@@ -86,21 +81,6 @@ def read_controls():
 def overlay_text(img, text, org=(10,30), color=(0,255,0)):
     cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-def autofocus_cycle(cam):
-    if controls is None:
-        print("libcamera controls not available")
-        return
-    try:
-        cam.set_controls({
-            "AfMode": controls.AfModeEnum.Manual,
-            "AfMetering": controls.AfMeteringEnum.Auto
-        })
-        print("Triggering autofocus...")
-        success = cam.autofocus_cycle()
-        print("Autofocus successful." if success else "Autofocus failed.")
-    except Exception as exc:
-        print("Autofocus cycle error:", exc)
-
 def run(debug_dir: str = None, tesseract_config: str = None):
     debug_dir = debug_dir or getattr(config, "DEBUG_DIR", "data/debug")
     utils.ensure_dir(debug_dir)
@@ -108,7 +88,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
 
     cam = capture.init_camera(preview_size=getattr(config, "CAMERA_PREVIEW_SIZE", None))
     # Run autofocus once at startup
-    autofocus_cycle(cam)
+    cam.autofocus()
 
     matcher = Matcher()  # uses defaults and loads index if available
     tesseract_config = tesseract_config or getattr(config, "TESSERACT_CONFIG_TITLE", None)
@@ -214,7 +194,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                     else:
                         log.warning("Failed to save card to %s", p)
             if key == ord("f"):
-                autofocus_cycle(cam)
+                cam.autofocus()
             if key == ord("h"):
                 print("\nControls:")
                 print("  c  - capture preview (crop, snippets, try match via Matcher)")
