@@ -5,6 +5,11 @@ from pathlib import Path
 from tools.descriptor_utils import phash_for_image_path, save_phash_descriptor
 from tools.phash_indexer import build_phash_index
 
+from PIL import Image
+from io import BytesIO
+import requests
+import imagehash
+
 class ScryfallDBBuilder:
     def __init__(self, set_code="m20", root_dir=Path(__file__).resolve().parents[1]):
         self.set_code = set_code
@@ -45,11 +50,17 @@ class ScryfallDBBuilder:
         card_id = card.get("id") or card.get("oracle_id") or card.get("name", "unknown")
         card_id = card_id.replace(" ", "_")
         img_url = card.get("image_url") or card.get("image_uris", {}).get("normal")
-        if img_url and img_url.startswith("file://"):
-            img_path = img_url[7:]
-            phash = phash_for_image_path(img_path)
-            save_phash_descriptor(card_id, phash, self.desc_dir)
-            return card_id, phash
+
+        if img_url and img_url.startswith("http"):
+            try:
+                response = requests.get(img_url, timeout=10)
+                image = Image.open(BytesIO(response.content)).convert("RGB")
+                phash = str(imagehash.phash(image))
+                save_phash_descriptor(card_id, phash, self.desc_dir)
+                return card_id, phash
+            except Exception as e:
+                self.logger.warning("Failed to process image for %s: %s", card_id, e)
+
         return card_id, None
 
     def build_db(self, cards):
@@ -103,7 +114,14 @@ class ScryfallDBBuilder:
         self.logger.info("Build complete for set %s", self.set_code)
 
 if __name__ == "__main__":
-    builder = ScryfallDBBuilder(set_code="m20")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Build Magic card database and phash index.")
+    parser.add_argument("--set", type=str, default="m20", help="Set code to build (e.g. m20, khm, eld)")
+    args = parser.parse_args()
+
+    builder = ScryfallDBBuilder(set_code=args.set)
     builder.run()
-    print("✅ Build complete.")
+    print(f"✅ Build complete for set {args.set}")
+
 
