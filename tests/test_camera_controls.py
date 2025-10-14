@@ -925,7 +925,7 @@ def main():
                     try:
                         from libcamera import controls
                         pc2.set_controls({"AfMode": controls.AfModeEnum.Manual})
-                        size = pc2.preview_configuration["main"]["size"]
+                        size = pc2.preview_configuration.main.size
                         fx, fy, fw, fh = 0.25, 0.25, 0.5, 0.5
                         af_window = [(int(size[0]*fx), int(size[1]*fy), int(size[0]*fw), int(size[1]*fh))]
                         pc2.set_controls({
@@ -938,6 +938,7 @@ def main():
                         print("Autofocus cycle error:", exc)
                 else:
                     print("Picamera2 not available or not running")
+
 
 
     finally:
