@@ -50,17 +50,24 @@ def match_phash(query_phash: str,
                 index: Dict[str, Dict],
                 top_k: int = DEFAULT_TOP_K,
                 threshold: int = DEFAULT_THRESHOLD) -> List[Tuple[str, Dict, int]]:
-    """Match query phash (hex string) against index of hex strings."""
     query_hash = hex_to_hash(query_phash)
     candidates = []
-    log.debug("Query shape: %s, DB shape: %s", query_hash.hash.shape, db_hash.hash.shape)
+
     for card_id, rec in index.items():
         db_phash = rec["phash"]
-        db_hash = hex_to_hash(db_phash)
+        try:
+            db_hash = hex_to_hash(db_phash)
+        except Exception as e:
+            log.warning("Failed to parse phash for %s: %s", card_id, e)
+            continue
+
         if query_hash.hash.shape != db_hash.hash.shape:
             log.warning("Shape mismatch: query %s vs db %s", query_hash.hash.shape, db_hash.hash.shape)
             continue
+
         dist = query_hash - db_hash
+        log.debug("Query shape: %s, DB shape: %s, dist: %d", query_hash.hash.shape, db_hash.hash.shape, dist)
+
         if dist <= threshold:
             candidates.append((card_id, rec, dist))
 
