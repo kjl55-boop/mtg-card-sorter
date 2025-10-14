@@ -36,7 +36,7 @@ log = utils.get_logger("matcher")
 
 # Configuration defaults (override via Matcher config param)
 DEFAULTS = {
-    "phash_size": 32,
+    "phash_size": 8, #32
     "phash_threshold": 10,
     "top_k": 5,
     "orb_min_matches": 8,
