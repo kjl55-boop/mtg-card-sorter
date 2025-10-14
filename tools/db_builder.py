@@ -55,7 +55,7 @@ class ScryfallDBBuilder:
             try:
                 response = requests.get(img_url, timeout=10)
                 image = Image.open(BytesIO(response.content)).convert("RGB")
-                phash = str(imagehash.phash(image))
+                phash = str(imagehash.phash(image, hash_size=8))
                 save_phash_descriptor(card_id, phash, self.desc_dir)
                 return card_id, phash
             except Exception as e:
