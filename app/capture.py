@@ -85,6 +85,15 @@ class Camera:
             cfg = pc2.create_preview_configuration({"size": self.preview_size})
             pc2.configure(cfg)
             pc2.start()
+            from libcamera import controls
+
+            pc2.set_controls({
+                "AfMode": controls.AfModeEnum.Manual,
+                "AfMetering": controls.AfMeteringEnum.Auto
+            })
+            print("Running autofocus cycle at startup...")
+            success = pc2.autofocus_cycle()
+            print("Autofocus successful." if success else "Autofocus failed.")
             time.sleep(self.warmup_sec)
             self.backend_name = "picamera2"
             self._handle = pc2
