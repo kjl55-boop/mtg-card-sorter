@@ -102,16 +102,6 @@ def overlay_text(img, text, org=(10, 30), color=(0, 255, 0)):
     cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
 def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8):
-    from PIL import Image
-    import imagehash
-
-    test_hash = imagehash.phash(Image.fromarray(card_image), hash_size=8)
-    log.info("Live phash: %s", str(test_hash))
-
-    result = matcher.match_phash_only(card_image)
-    log.info("Raw match result: %s", result)
-
-
     results = []
     for _ in range(attempts):
         result = matcher.match_with_policy(card_image)
