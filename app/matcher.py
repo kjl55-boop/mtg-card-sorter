@@ -143,6 +143,28 @@ class Matcher:
             result.elapsed = time.time() - start
             return result
 
+        log.info("Query phash: %s", str(qph))
+        log.info("Index size: %d", len(self._index))
+
+        # Log a few index hashes for comparison
+        for i, (key, rec) in enumerate(self._index.items()):
+            if i >= 3: break
+            idx_hash = rec.get("phash")
+            log.info("Index[%s] phash: %s", key, str(idx_hash))
+
+        raw_dists = []
+        for key, rec in self._index.items():
+            idx_hash = rec.get("phash")
+            if idx_hash:
+                try:
+                    dist = idx_hash - qph
+                    raw_dists.append((key, dist))
+                except Exception as e:
+                    log.warning("Hash comparison failed for %s: %s", key, e)
+
+        raw_dists.sort(key=lambda x: x[1])
+        log.info("Top raw distances: %s", raw_dists[:5])
+
         # Not within threshold; keep best candidate info for fallback decision
         result.elapsed = time.time() - start
         return result
