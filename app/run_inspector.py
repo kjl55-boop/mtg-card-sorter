@@ -101,11 +101,12 @@ def read_controls():
 def overlay_text(img, text, org=(10, 30), color=(0, 255, 0)):
     cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
+
 def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8):
     results = []
     for i in range(attempts):
         result = matcher.match_with_policy(card_image)
-        if result:
+        if result and result.success and result.dist is not None and result.dist <= dist_threshold:
             card_name = result.meta.get("name", "unknown")
             log.info(
                 "Attempt %d: success=%s id=%s name=%s dist=%s",
@@ -115,24 +116,25 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
                 card_name,
                 result.dist,
             )
-            if result.success and result.dist is not None and result.dist <= dist_threshold:
-                results.append((result.id, result.dist, card_name))
+            results.append((result.id, result.dist, card_name))
         else:
-            log.info("Attempt %d: result=None", i + 1)
+            log.info("Attempt %d: no valid match", i + 1)
 
     if not results:
+        log.info("No valid phash matches across attempts")
         return None
 
     counts = Counter([r[0] for r in results])
     most_common_id, freq = counts.most_common(1)[0]
+    log.info("Most common ID: %s (freq=%d)", most_common_id, freq)
 
     if freq >= 2:
         for r in results:
             if r[0] == most_common_id:
-                log.info("Returning confirmed match: %s", r)
                 return r  # (id, dist, name)
-    return None
 
+    log.info("No consensus match found")
+    return None
 
 
 def fallback_ocr(card, top_pct, tesseract_config):
