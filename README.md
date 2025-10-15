@@ -77,3 +77,40 @@ This restores:
 cards.db → for metadata and sorting
 
 phash_index.pkl → for fast phash-based recognition
+
+
+## Folder Structure
+mtg-card-sorter/
+├── recognizer/         # All card recognition logic
+│   ├── __init__.py
+│   ├── matcher.py
+│   ├── phash.py
+│   ├── ocr.py
+│   ├── crop.py
+│   ├── preprocess.py
+├── hardware/           # GPIO, camera, motors, board comms
+│   ├── __init__.py
+│   ├── camera.py
+│   ├── motor_control.py
+│   ├── board_comm.py
+├── pipeline/           # High-level orchestration
+│   ├── __init__.py
+│   ├── run_inspector.py
+│   ├── capture.py
+│   ├── utils.py
+├── config/
+│   ├── __init__.py
+│   └── config.py
+├── tools/
+│   ├── __init__.py
+│   ├── db_builder.py
+│   ├── db_packager.py
+│   ├── descriptors_utils.py
+│   └── phash_indexer.py
+├── tests/
+│   ├── __init__.py
+│   └── test_phash_debug_folder.py
+├── data/
+├── logs/
+├── requirements.txt
+
