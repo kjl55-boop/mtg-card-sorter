@@ -56,7 +56,7 @@ class ScryfallDBBuilder:
                 response = requests.get(img_url, timeout=10)
                 image = Image.open(BytesIO(response.content)).convert("RGB")
                 phash = str(imagehash.phash(image, hash_size=8))
-                save_phash_descriptor(card_id, phash, self.desc_dir)
+                #save_phash_descriptor(card_id, phash, self.desc_dir)
                 return card_id, phash
             except Exception as e:
                 self.logger.warning("Failed to process image for %s: %s", card_id, e)
@@ -113,6 +113,7 @@ class ScryfallDBBuilder:
         self.build_index()
         self.logger.info("Build complete for set %s", self.set_code)
 
+    '''
     # Save phash as hex string
     def save_phash_descriptor(card_id, phash, desc_dir):
         conn = sqlite3.connect(desc_dir.parent / "cards.db")
@@ -120,7 +121,7 @@ class ScryfallDBBuilder:
         cur.execute("INSERT OR REPLACE INTO cards (id, phash) VALUES (?, ?)", (card_id, phash))
         conn.commit()
         conn.close()
-
+    '''
 
 if __name__ == "__main__":
     import argparse
