@@ -31,7 +31,7 @@ import numpy as np
 from . import utils
 log = utils.get_logger("camera")
 
-from .crop import crop_card_from_box, find_card_contour
+from recognizer.crop import crop_card_from_box, find_card_contour
 from .config import CAMERA_PREVIEW_SIZE, CAMERA_WARMUP_SEC, NORMALIZED_SIZE, DEBUG_DIR
 
 # ensure debug dir exists

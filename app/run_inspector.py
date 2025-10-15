@@ -17,7 +17,7 @@ from pathlib import Path
 from collections import Counter
 
 from . import capture, crop, ocr, config, utils
-from .matcher import Matcher
+from recognizer.matcher import Matcher
 
 # ─────────────────────────────────────────────────────────────
 # Logging and Defaults
