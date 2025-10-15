@@ -106,7 +106,7 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
     results = []
     for i in range(attempts):
         result = matcher.match_with_policy(card_image)
-        if result and result.success and result.dist is not None and result.dist <= dist_threshold:
+        if result:
             card_name = result.meta.get("name", "unknown")
             log.info(
                 "Attempt %d: success=%s id=%s name=%s dist=%s",
@@ -116,9 +116,11 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
                 card_name,
                 result.dist,
             )
-            results.append((result.id, result.dist, card_name))
+            if result.success and result.dist is not None and result.dist <= dist_threshold:
+                results.append((result.id, result.dist, card_name))
         else:
-            log.info("Attempt %d: no valid match", i + 1)
+            log.info("Attempt %d: result=None", i + 1)
+
 
     if not results:
         log.info("No valid phash matches across attempts")
