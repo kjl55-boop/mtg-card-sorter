@@ -104,7 +104,7 @@ def overlay_text(img, text, org=(10, 30), color=(0, 255, 0)):
 def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8):
     results = []
     for _ in range(attempts):
-        result = matcher.match_card(card_image)
+        result = matcher.match_with_policy(card_image)
         if result and result.success and result.dist <= dist_threshold:
             results.append((result.id, result.dist, result.meta.get("name", "unknown")))
 
