@@ -165,7 +165,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
 
                 # Present result
                 if result and result.success:
-                    card_name = result["meta"].get("name", "unknown")
+                    card_name = result.meta.get("name", "unknown")
                     log.info("MATCH id=%s name=%s dist=%s attempts=%s elapsed=%.3fs", result.id, card_name, result.dist, result.attempts, result.elapsed)
                     # overlay a short label on the card display
                     label = result.meta.get("name", result.id or "MATCH")
