@@ -103,10 +103,22 @@ def overlay_text(img, text, org=(10, 30), color=(0, 255, 0)):
 
 def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8):
     results = []
-    for _ in range(attempts):
+    for i in range(attempts):
         result = matcher.match_with_policy(card_image)
-        if result and result.success and result.dist <= dist_threshold:
-            results.append((result.id, result.dist, result.meta.get("name", "unknown")))
+        if result:
+            card_name = result.meta.get("name", "unknown")
+            log.info(
+                "Attempt %d: success=%s id=%s name=%s dist=%s",
+                i + 1,
+                result.success,
+                result.id,
+                card_name,
+                result.dist,
+            )
+            if result.success and result.dist is not None and result.dist <= dist_threshold:
+                results.append((result.id, result.dist, card_name))
+        else:
+            log.info("Attempt %d: result=None", i + 1)
 
     if not results:
         return None
@@ -119,6 +131,7 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
             if r[0] == most_common_id:
                 return r  # (id, dist, name)
     return None
+
 
 
 def fallback_ocr(card, top_pct, tesseract_config):
@@ -208,14 +221,6 @@ def run(debug_dir: str = None, tesseract_config: str = None):
 
                 cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
 
-
-                '''match = confirm_match_with_retries(card, matcher, attempts=3, dist_threshold=8)
-                if match:
-                    match_id, dist, card_name = match
-                    log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
-                    overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
-                    cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
-'''
 
             elif key == ord("s") and box is not None:
                 ts = int(time.time())
