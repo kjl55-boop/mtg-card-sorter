@@ -200,9 +200,10 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 match = confirm_match_with_retries(card, matcher, attempts=3, dist_threshold=8)
                 if match:
                     match_id, dist, card_name = match
-                    log.info("No confident match; running OCR fallback")
-                    fallback_ocr(card, ctrl["top_pct"], tesseract_config)
+                    log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
+                    overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
                     cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
+
 
             elif key == ord("s") and box is not None:
                 ts = int(time.time())
