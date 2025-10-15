@@ -13,7 +13,8 @@ import imagehash
 import cv2
 import numpy as np
 from tqdm import tqdm
-from app import config, utils
+from config import config
+from pipeline import utils
 
 ORB_FEATURES = config.ORB_FEATURES
 DESC_DIR = config.DESC_DIR

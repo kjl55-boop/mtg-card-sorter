@@ -16,7 +16,7 @@ from PIL import Image
 import imagehash
 import pickle
 from imagehash import hex_to_hash
-from pipeline import utils
+from ..pipeline import utils
 
 # Logging
 log = utils.get_logger("phash")

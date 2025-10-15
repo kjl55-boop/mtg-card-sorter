@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, Any
 import cv2
 import numpy as np
-from app import utils
+from pipeline import utils
 log = utils.get_logger("preprocess")
 
 @dataclass
