@@ -105,6 +105,7 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
     results = []
     for _ in range(attempts):
         result = matcher.match_with_policy(card_image)
+        log.info("Phash attempt: success=%s dist=%s id=%s", result.success, result.dist if result else None, result.id if result else None)
         if result and result.success and result.dist <= dist_threshold:
             results.append((result.id, result.dist, result.meta.get("name", "unknown")))
 
@@ -184,10 +185,12 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 print("  h  - show this help menu\n")
 
             elif key == ord("c") and box is not None:
+                log.info("Capture triggered")
                 card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
                 if card is None or card.size == 0:
                     log.warning("Crop failed")
                     continue
+                log.info("Card cropped successfully: shape=%s", card.shape)
 
                 snippets = crop.extract_snippets(card, ctrl["top_pct"], ctrl["mid_start_pct"], ctrl["mid_end_pct"], ctrl["bot_pct"])
                 cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
