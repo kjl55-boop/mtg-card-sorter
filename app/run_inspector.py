@@ -71,16 +71,23 @@ def controls_open():
         return False
 
 def read_controls():
+    def safe_get(name, default):
+        try:
+            return cv2.getTrackbarPos(name, CONTROLS_WIN) / 100.0
+        except Exception:
+            return default
+
     return {
-        "pad_x": cv2.getTrackbarPos("Pad X %", CONTROLS_WIN) / 100.0,
-        "pad_y": cv2.getTrackbarPos("Pad Y %", CONTROLS_WIN) / 100.0,
-        "min_area": max(100, cv2.getTrackbarPos("Min Area", CONTROLS_WIN)),
-        "top_pct": cv2.getTrackbarPos("Top %", CONTROLS_WIN) / 100.0,
-        "mid_start": cv2.getTrackbarPos("Mid Start %", CONTROLS_WIN) / 100.0,
-        "mid_end": cv2.getTrackbarPos("Mid End %", CONTROLS_WIN) / 100.0,
-        "bot_pct": cv2.getTrackbarPos("Bot %", CONTROLS_WIN) / 100.0,
-        "display_scale": max(10, cv2.getTrackbarPos("Display %", CONTROLS_WIN)) / 100.0
+        "pad_x": safe_get("Pad X %", DEFAULTS["pad_x_pct"]),
+        "pad_y": safe_get("Pad Y %", DEFAULTS["pad_y_pct"]),
+        "min_area": max(100, cv2.getTrackbarPos("Min Area", CONTROLS_WIN) if controls_open() else DEFAULTS["min_area"]),
+        "top_pct": safe_get("Top %", DEFAULTS["top_pct"]),
+        "mid_start": safe_get("Mid Start %", DEFAULTS["mid_start_pct"]),
+        "mid_end": safe_get("Mid End %", DEFAULTS["mid_end_pct"]),
+        "bot_pct": safe_get("Bot %", DEFAULTS["bot_pct"]),
+        "display_scale": max(0.1, safe_get("Display %", DEFAULTS["display_scale"]))
     }
+
 
 # ─────────────────────────────────────────────────────────────
 # Matching Logic
