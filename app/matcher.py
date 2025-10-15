@@ -114,10 +114,7 @@ class Matcher:
         gray = self.preprocess_fn(card_bgr, out_size=256, clahe=True, blur_ksize=(3,3), crop_margin_pct=0.02)
         qph = compute_phash_from_gray(gray, phash_size=cfg["phash_size"])
 
-        #candidates = match_phash(qph, self._index, top_k=cfg["top_k"], threshold=cfg["phash_threshold"])
-        flat_index = {k: v["phash"] for k, v in self._index.items() if "phash" in v}
-        candidates = match_phash(qph, flat_index, top_k=cfg["top_k"], threshold=cfg["phash_threshold"])
-
+        candidates = match_phash(qph, self._index, top_k=cfg["top_k"], threshold=cfg["phash_threshold"])
         result = MatchResult(success=False, attempts=1, elapsed=0.0)
 
         if not candidates:
@@ -153,20 +150,7 @@ class Matcher:
         for i, (key, rec) in enumerate(self._index.items()):
             if i >= 3: break
             idx_hash = rec.get("phash")
-            log.info("Index[%s] phash: %s", key, str(idx_hash))
-
-        raw_dists = []
-        for key, rec in self._index.items():
-            idx_hash = rec.get("phash")
-            if idx_hash:
-                try:
-                    dist = idx_hash - qph
-                    raw_dists.append((key, dist))
-                except Exception as e:
-                    log.warning("Hash comparison failed for %s: %s", key, e)
-
-        raw_dists.sort(key=lambda x: x[1])
-        log.info("Top raw distances: %s", raw_dists[:5])
+            log.info("Index[%s] phash: %s", key, str(idx_hash)) 
 
         # Not within threshold; keep best candidate info for fallback decision
         result.elapsed = time.time() - start
