@@ -215,7 +215,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 for label, snip in snippets:
                     cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
 
-                match = confirm_match_with_retries(card, matcher, attempts=3, dist_threshold=8)
+                match = confirm_match_with_retries(card, matcher, attempts=3, dist_threshold = matcher.config["phash_threshold"])
                 log.info("Match object: %s", match)
                 if match is not None:
                     try:
