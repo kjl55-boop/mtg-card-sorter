@@ -31,7 +31,7 @@ from .phash import (
 )
 from .ocr import crop_title_band, ocr_image
 
-from . import utils
+from app import utils
 log = utils.get_logger("matcher")
 
 # Configuration defaults (override via Matcher config param)
