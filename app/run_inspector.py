@@ -151,8 +151,6 @@ def run(debug_dir: str = None, tesseract_config: str = None):
 
             key = cv2.waitKey(1) & 0xFF
 
-            # ───── Key Handling ─────
-
             if key == ord("m"):
                 controls_visible = not controls_visible
                 create_controls() if controls_visible else destroy_controls()
@@ -214,6 +212,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                         log.info("Saved card to %s", p)
                     else:
                         log.warning("Failed to save card to %s", p)
+
     finally:
         try:
             capture.close_camera(cam)
@@ -228,4 +227,3 @@ def run(debug_dir: str = None, tesseract_config: str = None):
 
 if __name__ == "__main__":
     run()
-
