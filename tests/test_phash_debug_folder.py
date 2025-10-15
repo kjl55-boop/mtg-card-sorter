@@ -1,6 +1,11 @@
 import os
 import cv2
+import sys
 from pathlib import Path
+
+# Add the app/ directory to Python's module search path
+sys.path.append(str(Path(__file__).resolve().parent.parent / "app"))
+
 from card_inspector.matcher import Matcher
 from card_inspector.phash import compute_phash
 from card_inspector.config import load_config
