@@ -254,7 +254,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 for label, snip in snippets:
                     cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
 
-                match = match_with_shudder_capture(camera, matcher, box)
+                match = match_with_shudder_capture(cam, matcher, box)
                 if match:
                     match_id, dist, card_name = match
                     log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
