@@ -7,20 +7,25 @@ Keys:
   s  - save current crop to debug dir
   m  - toggle controls window (open/close)
   q  - quit
-  f  - 
+  f  - trigger autofocus
+  h  - show help menu
 """
-from pathlib import Path
+
 import time
 import cv2
+from pathlib import Path
+from collections import Counter
 
 from . import capture, crop, ocr, config, utils
 from .matcher import Matcher, MatchResult
 
-# Configure logging once at startup
-utils.configure_logging(level=config.LOG_LEVEL if hasattr(config, "LOG_LEVEL") else None)
+# ─────────────────────────────────────────────────────────────
+# Logging and Defaults
+# ─────────────────────────────────────────────────────────────
+
+utils.configure_logging(level=getattr(config, "LOG_LEVEL", None))
 log = utils.get_logger("run_inspector")
 
-# Defaults (sourced from config where available)
 DEFAULTS = {
     "pad_x_pct": 0,
     "pad_y_pct": 0,
@@ -34,17 +39,24 @@ DEFAULTS = {
 
 CONTROLS_WIN = "Controls"
 
+# ─────────────────────────────────────────────────────────────
+# UI Controls
+# ─────────────────────────────────────────────────────────────
+
 def create_controls():
     cv2.namedWindow(CONTROLS_WIN, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(CONTROLS_WIN, 700, 240)
-    cv2.createTrackbar("Pad X %", CONTROLS_WIN, int(DEFAULTS["pad_x_pct"]*100), 50, lambda x: None)
-    cv2.createTrackbar("Pad Y %", CONTROLS_WIN, int(DEFAULTS["pad_y_pct"]*100), 50, lambda x: None)
-    cv2.createTrackbar("Min Area", CONTROLS_WIN, DEFAULTS["min_area"], 50000, lambda x: None)
-    cv2.createTrackbar("Top %", CONTROLS_WIN, int(DEFAULTS["top_pct"]*100), 40, lambda x: None)
-    cv2.createTrackbar("Mid Start %", CONTROLS_WIN, int(DEFAULTS["mid_start_pct"]*100), 70, lambda x: None)
-    cv2.createTrackbar("Mid End %", CONTROLS_WIN, int(DEFAULTS["mid_end_pct"]*100), 90, lambda x: None)
-    cv2.createTrackbar("Bot %", CONTROLS_WIN, int(DEFAULTS["bot_pct"]*100), 95, lambda x: None)
-    cv2.createTrackbar("Display %", CONTROLS_WIN, int(DEFAULTS["display_scale"]*100), 200, lambda x: None)
+    for name, default, max_val in [
+        ("Pad X %", int(DEFAULTS["pad_x_pct"] * 100), 50),
+        ("Pad Y %", int(DEFAULTS["pad_y_pct"] * 100), 50),
+        ("Min Area", DEFAULTS["min_area"], 50000),
+        ("Top %", int(DEFAULTS["top_pct"] * 100), 40),
+        ("Mid Start %", int(DEFAULTS["mid_start_pct"] * 100), 70),
+        ("Mid End %", int(DEFAULTS["mid_end_pct"] * 100), 90),
+        ("Bot %", int(DEFAULTS["bot_pct"] * 100), 95),
+        ("Display %", int(DEFAULTS["display_scale"] * 100), 200),
+    ]:
+        cv2.createTrackbar(name, CONTROLS_WIN, default, max_val, lambda x: None)
 
 def destroy_controls():
     try:
@@ -59,27 +71,53 @@ def controls_open():
         return False
 
 def read_controls():
-    pad_x = cv2.getTrackbarPos("Pad X %", CONTROLS_WIN) / 100.0
-    pad_y = cv2.getTrackbarPos("Pad Y %", CONTROLS_WIN) / 100.0
-    min_area = max(100, cv2.getTrackbarPos("Min Area", CONTROLS_WIN))
-    top_pct = cv2.getTrackbarPos("Top %", CONTROLS_WIN) / 100.0
-    mid_start = cv2.getTrackbarPos("Mid Start %", CONTROLS_WIN) / 100.0
-    mid_end = cv2.getTrackbarPos("Mid End %", CONTROLS_WIN) / 100.0
-    bot_pct = cv2.getTrackbarPos("Bot %", CONTROLS_WIN) / 100.0
-    display_scale = max(10, cv2.getTrackbarPos("Display %", CONTROLS_WIN)) / 100.0
     return {
-        "pad_x": pad_x,
-        "pad_y": pad_y,
-        "min_area": min_area,
-        "top_pct": top_pct,
-        "mid_start": mid_start,
-        "mid_end": mid_end,
-        "bot_pct": bot_pct,
-        "display_scale": display_scale
+        "pad_x": cv2.getTrackbarPos("Pad X %", CONTROLS_WIN) / 100.0,
+        "pad_y": cv2.getTrackbarPos("Pad Y %", CONTROLS_WIN) / 100.0,
+        "min_area": max(100, cv2.getTrackbarPos("Min Area", CONTROLS_WIN)),
+        "top_pct": cv2.getTrackbarPos("Top %", CONTROLS_WIN) / 100.0,
+        "mid_start": cv2.getTrackbarPos("Mid Start %", CONTROLS_WIN) / 100.0,
+        "mid_end": cv2.getTrackbarPos("Mid End %", CONTROLS_WIN) / 100.0,
+        "bot_pct": cv2.getTrackbarPos("Bot %", CONTROLS_WIN) / 100.0,
+        "display_scale": max(10, cv2.getTrackbarPos("Display %", CONTROLS_WIN)) / 100.0
     }
 
-def overlay_text(img, text, org=(10,30), color=(0,255,0)):
+# ─────────────────────────────────────────────────────────────
+# Matching Logic
+# ─────────────────────────────────────────────────────────────
+
+def overlay_text(img, text, org=(10, 30), color=(0, 255, 0)):
     cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8):
+    results = []
+    for _ in range(attempts):
+        result = matcher.match_card(card_image)
+        if result and result.success and result.dist <= dist_threshold:
+            results.append((result.id, result.dist, result.meta.get("name", "unknown")))
+
+    if not results:
+        return None
+
+    counts = Counter([r[0] for r in results])
+    most_common_id, freq = counts.most_common(1)[0]
+
+    if freq >= 2:
+        for r in results:
+            if r[0] == most_common_id:
+                return r  # (id, dist, name)
+    return None
+
+def fallback_ocr(card, top_pct, tesseract_config):
+    title_crop = ocr.crop_title_band(card, init_top_pct=top_pct)
+    proc = ocr.preprocess_for_ocr(title_crop)
+    text, conf = ocr.ocr_image(proc, tesseract_config)
+    overlay_text(card, f"OCR: {text[:30]} [{conf}]", org=(10, 40), color=(0, 200, 255))
+    log.info("OCR title: %s conf=%s", text, conf)
+
+# ─────────────────────────────────────────────────────────────
+# Main Loop
+# ─────────────────────────────────────────────────────────────
 
 def run(debug_dir: str = None, tesseract_config: str = None):
     debug_dir = debug_dir or getattr(config, "DEBUG_DIR", "data/debug")
@@ -87,10 +125,9 @@ def run(debug_dir: str = None, tesseract_config: str = None):
     log.info("Starting run_inspector; debug_dir=%s", debug_dir)
 
     cam = capture.init_camera(preview_size=getattr(config, "CAMERA_PREVIEW_SIZE", None))
-    # Run autofocus once at startup
     cam.autofocus()
 
-    matcher = Matcher()  # uses defaults and loads index if available
+    matcher = Matcher()
     tesseract_config = tesseract_config or getattr(config, "TESSERACT_CONFIG_TITLE", None)
 
     controls_visible = False
@@ -103,103 +140,31 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 time.sleep(0.1)
                 continue
 
-            if controls_visible and controls_open():
-                ctrl = read_controls()
-                min_area = ctrl["min_area"]
-                display_scale = ctrl["display_scale"]
-            else:
-                min_area = DEFAULTS["min_area"]
-                display_scale = DEFAULTS["display_scale"]
-
-            box, contour = crop.find_card_contour(frame, min_area=min_area)
+            ctrl = read_controls() if controls_visible and controls_open() else DEFAULTS
+            box, contour = crop.find_card_contour(frame, min_area=ctrl["min_area"])
             vis = frame.copy()
             if box is not None:
-                cv2.drawContours(vis, [box], -1, (0,0,255), 3)
+                cv2.drawContours(vis, [box], -1, (0, 0, 255), 3)
 
-            preview = cv2.resize(vis, (0,0), fx=display_scale, fy=display_scale)
+            preview = cv2.resize(vis, (0, 0), fx=ctrl["display_scale"], fy=ctrl["display_scale"])
             cv2.imshow("Live", preview)
+
             key = cv2.waitKey(1) & 0xFF
+
+            # ───── Key Handling ─────
 
             if key == ord("m"):
                 controls_visible = not controls_visible
-                if controls_visible:
-                    create_controls()
-                else:
-                    destroy_controls()
+                create_controls() if controls_visible else destroy_controls()
 
-            if key == ord("q"):
+            elif key == ord("q"):
                 log.info("Quit requested")
                 break
 
-            if key == ord("c") and box is not None:
-                # read control params at capture time
-                if controls_visible and controls_open():
-                    c = read_controls()
-                    #pad_x = c["pad_x"]; pad_y = c["pad_y"]
-                    pad_x = DEFAULTS["pad_x_pct"]; pad_y = DEFAULTS["pad_y_pct"]
-                    top_pct = c["top_pct"]; mid_start = c["mid_start"]
-                    mid_end = c["mid_end"]; bot_pct = c["bot_pct"]
-                else:
-                    #pad_x = DEFAULTS["pad_x"]; pad_y = DEFAULTS["pad_y"]
-                    pad_x = DEFAULTS["pad_x_pct"]; pad_y = DEFAULTS["pad_y_pct"]
-                    top_pct = DEFAULTS["top_pct"]; mid_start = DEFAULTS["mid_start_pct"]
-                    mid_end = DEFAULTS["mid_end_pct"]; bot_pct = DEFAULTS["bot_pct"]
-
-                card = crop.crop_card_from_box(frame, box, pad_x_pct=pad_x, pad_y_pct=pad_y)
-                if card is None or card.size == 0:
-                    log.warning("Crop failed")
-                    continue
-
-                # show card and snippets
-                snippets = crop.extract_snippets(card, top_pct, mid_start, mid_end, bot_pct)
-                cv2.imshow("Card", cv2.resize(card, (0,0), fx=0.6, fy=0.6))
-                for (label, snip) in snippets:
-                    cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0,0), fx=0.6, fy=0.6))
-
-                # Run matcher policy (phash attempts, ORB verify, OCR fallback)
-                try:
-                    result = matcher.match_with_policy(card)
-                except Exception as e:
-                    utils.log_exception(log, e, "Matcher raised unexpected exception")
-                    result = MatchResult(success=False)
-
-                # Present result
-                if result and result.success:
-                    card_name = result.meta.get("name", "unknown")
-                    log.info("MATCH id=%s name=%s dist=%s attempts=%s elapsed=%.3fs", result.id, card_name, result.dist, result.attempts, result.elapsed)
-                    # overlay a short label on the card display
-                    label = result.meta.get("name", result.id or "MATCH")
-                    overlay_text(card, f"{label} [{result.dist}]", org=(10,40))
-                    cv2.imshow("Card", cv2.resize(card, (0,0), fx=0.6, fy=0.6))
-                else:
-                    log.info("No match; running OCR fallback for diagnostics")
-                    title_crop = ocr.crop_title_band(card, init_top_pct=top_pct)
-                    proc = ocr.preprocess_for_ocr(title_crop)
-                    text, conf = ocr.ocr_image(proc, tesseract_config)
-                    #text, conf = ocr.ocr_image(proc, config=tesseract_config)
-                    log.info("OCR title: %s conf=%s", text, conf)
-                    overlay_text(card, f"OCR: {text[:30]} [{conf}]", org=(10,40), color=(0,200,255))
-                    cv2.imshow("Card", cv2.resize(card, (0,0), fx=0.6, fy=0.6))
-
-            if key == ord("s") and box is not None:
-                ts = int(time.time())
-                if controls_visible and controls_open():
-                    pad_x = read_controls()["pad_x"]
-                    pad_y = read_controls()["pad_y"]
-                else:
-                    pad_x = 0.08
-                    pad_y = 0.08
-                card = crop.crop_card_from_box(frame, box, pad_x_pct=pad_x, pad_y_pct=pad_y)
-                if card is not None and card.size:
-                    p = Path(debug_dir) / f"{ts}_card.png"
-                    ok = utils.safe_imwrite(str(p), card)
-                    if ok:
-                        log.info("Saved card to %s", p)
-                    else:
-                        log.warning("Failed to save card to %s", p)
-            if key == ord("f"):
+            elif key == ord("f"):
                 cam.autofocus()
-            if key == ord("h"):
+
+            elif key == ord("h"):
                 print("\nControls:")
                 print("  c  - capture preview (crop, snippets, try match via Matcher)")
                 print("  s  - save current crop to debug dir")
@@ -208,6 +173,47 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 print("  f  - trigger autofocus")
                 print("  h  - show this help menu\n")
 
+            elif key == ord("c") and box is not None:
+                pad_x = ctrl["pad_x"]
+                pad_y = ctrl["pad_y"]
+                top_pct = ctrl["top_pct"]
+                mid_start = ctrl["mid_start"]
+                mid_end = ctrl["mid_end"]
+                bot_pct = ctrl["bot_pct"]
+
+                card = crop.crop_card_from_box(frame, box, pad_x_pct=pad_x, pad_y_pct=pad_y)
+                if card is None or card.size == 0:
+                    log.warning("Crop failed")
+                    continue
+
+                snippets = crop.extract_snippets(card, top_pct, mid_start, mid_end, bot_pct)
+                cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
+                for label, snip in snippets:
+                    cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
+
+                match = confirm_match_with_retries(card, matcher, attempts=3, dist_threshold=8)
+                if match:
+                    match_id, dist, card_name = match
+                    log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
+                    overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
+                    cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
+                else:
+                    log.info("No confident match; running OCR fallback")
+                    fallback_ocr(card, top_pct, tesseract_config)
+                    cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
+
+            elif key == ord("s") and box is not None:
+                ts = int(time.time())
+                pad_x = ctrl["pad_x"]
+                pad_y = ctrl["pad_y"]
+                card = crop.crop_card_from_box(frame, box, pad_x_pct=pad_x, pad_y_pct=pad_y)
+                if card is not None and card.size:
+                    p = Path(debug_dir) / f"{ts}_card.png"
+                    ok = utils.safe_imwrite(str(p), card)
+                    if ok:
+                        log.info("Saved card to %s", p)
+                    else:
+                        log.warning("Failed to save card to %s", p)
     finally:
         try:
             capture.close_camera(cam)
@@ -222,3 +228,4 @@ def run(debug_dir: str = None, tesseract_config: str = None):
 
 if __name__ == "__main__":
     run()
+
