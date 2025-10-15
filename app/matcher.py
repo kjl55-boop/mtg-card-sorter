@@ -114,7 +114,10 @@ class Matcher:
         gray = self.preprocess_fn(card_bgr, out_size=256, clahe=True, blur_ksize=(3,3), crop_margin_pct=0.02)
         qph = compute_phash_from_gray(gray, phash_size=cfg["phash_size"])
 
-        candidates = match_phash(qph, self._index, top_k=cfg["top_k"], threshold=cfg["phash_threshold"])
+        #candidates = match_phash(qph, self._index, top_k=cfg["top_k"], threshold=cfg["phash_threshold"])
+        flat_index = {k: v["phash"] for k, v in self._index.items() if "phash" in v}
+        candidates = match_phash(qph, flat_index, top_k=cfg["top_k"], threshold=cfg["phash_threshold"])
+
         result = MatchResult(success=False, attempts=1, elapsed=0.0)
 
         if not candidates:
