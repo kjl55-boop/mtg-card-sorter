@@ -139,6 +139,45 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
     return None
 
 
+def match_with_shudder_capture(camera, matcher, box, attempts=3, dist_threshold=None):
+    results = []
+    dist_threshold = dist_threshold or matcher.config["phash_threshold"]
+
+    for i in range(attempts):
+        frame = camera.read(timeout=1.0)
+        if frame is None:
+            continue
+        card = crop.crop_card_from_box(frame, box, pad_x_pct=0.02, pad_y_pct=0.02)
+        result = matcher.match_with_policy(card)
+        if result and result.success and result.dist is not None and result.dist <= dist_threshold:
+            card_name = result.meta.get("name", "unknown")
+            log.info(
+                "Shudder attempt %d: success=%s id=%s name=%s dist=%s",
+                i + 1,
+                result.success,
+                result.id,
+                card_name,
+                result.dist,
+            )
+            results.append((result.id, result.dist, card_name))
+        else:
+            log.info("Shudder attempt %d: no valid match", i + 1)
+
+    if not results:
+        log.info("No valid matches across shudder attempts")
+        return None
+
+    counts = Counter([r[0] for r in results])
+    most_common_id, freq = counts.most_common(1)[0]
+    if freq >= 2:
+        for r in results:
+            if r[0] == most_common_id:
+                return r  # (id, dist, name)
+
+    log.info("No consensus match found across shudder attempts")
+    return None
+
+
 def fallback_ocr(card, top_pct, tesseract_config):
     title_crop = ocr.crop_title_band(card, init_top_pct=top_pct)
     proc = ocr.preprocess_for_ocr(title_crop)
@@ -215,18 +254,15 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 for label, snip in snippets:
                     cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
 
-                match = confirm_match_with_retries(card, matcher, attempts=3, dist_threshold = matcher.config["phash_threshold"])
-                log.info("Match object: %s", match)
-                if match is not None:
-                    try:
-                        match_id, dist, card_name = match
-                        log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
-                        overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
-                    except Exception as e:
-                        log.error("Failed to unpack match: %s", e)
+                match = match_with_shudder_capture(camera, matcher, box)
+                if match:
+                    match_id, dist, card_name = match
+                    log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
+                    overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
                 else:
                     log.info("No confident match; running OCR fallback")
                     fallback_ocr(card, ctrl["top_pct"], tesseract_config)
+
 
                 cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
 
