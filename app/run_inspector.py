@@ -16,7 +16,8 @@ import cv2
 from pathlib import Path
 from collections import Counter
 
-from . import capture, crop, ocr, config, utils
+from . import capture, config, utils
+from recognizer import crop, ocr
 from recognizer.matcher import Matcher
 
 # ─────────────────────────────────────────────────────────────
