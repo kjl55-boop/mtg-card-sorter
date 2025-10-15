@@ -106,7 +106,6 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
     results = []
     for i in range(attempts):
         result = matcher.match_with_policy(card_image)
-        matcher.debug_match(card_image, top_k=5)
         if result:
             card_name = result.meta.get("name", "unknown")
             log.info(
