@@ -129,6 +129,7 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
     if freq >= 2:
         for r in results:
             if r[0] == most_common_id:
+                log.info("Returning confirmed match: %s", r)
                 return r  # (id, dist, name)
     return None
 
@@ -211,10 +212,14 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                     cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
 
                 match = confirm_match_with_retries(card, matcher, attempts=3, dist_threshold=8)
-                if match:
-                    match_id, dist, card_name = match
-                    log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
-                    overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
+                log.info("Match object: %s", match)
+                if match is not None:
+                    try:
+                        match_id, dist, card_name = match
+                        log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
+                        overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
+                    except Exception as e:
+                        log.error("Failed to unpack match: %s", e)
                 else:
                     log.info("No confident match; running OCR fallback")
                     fallback_ocr(card, ctrl["top_pct"], tesseract_config)
