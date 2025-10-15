@@ -25,8 +25,8 @@ INDEX_PATH = Path("data/descriptors/phash_index.pkl")
 # Configurable defaults
 DEFAULT_PHASH_SIZE = 8
 DEFAULT_TOP_K = 5
-DEFAULT_THRESHOLD = 10
-DEFAULT_ORB_MIN_MATCHES = 8
+DEFAULT_THRESHOLD = 8#10
+DEFAULT_ORB_MIN_MATCHES = 12#8
 
 # --- Core pHash logic ---
 
