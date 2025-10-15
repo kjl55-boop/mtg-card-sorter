@@ -105,7 +105,6 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
     results = []
     for _ in range(attempts):
         result = matcher.match_with_policy(card_image)
-        log.info("Phash attempt: success=%s dist=%s id=%s", result.success, result.dist if result else None, result.id if result else None)
         if result and result.success and result.dist <= dist_threshold:
             results.append((result.id, result.dist, result.meta.get("name", "unknown")))
 
@@ -120,6 +119,7 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
             if r[0] == most_common_id:
                 return r  # (id, dist, name)
     return None
+
 
 def fallback_ocr(card, top_pct, tesseract_config):
     title_crop = ocr.crop_title_band(card, init_top_pct=top_pct)
@@ -197,18 +197,11 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 for label, snip in snippets:
                     cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
 
-                match_result = matcher.match_with_policy(card)
-                if match_result and match_result.success:
-                    card_name = match_result.meta.get("name", "unknown")
-                    log.info(
-                        "MATCH id=%s name=%s dist=%s attempts=%s elapsed=%.3fs",
-                        match_result.id,
-                        card_name,
-                        match_result.dist,
-                        match_result.attempts,
-                        match_result.elapsed,
-                    )
-                    overlay_text(card, f"{card_name} [{match_result.dist}]", org=(10, 40))
+                match = confirm_match_with_retries(card, matcher, attempts=3, dist_threshold=8)
+                if match:
+                    match_id, dist, card_name = match
+                    log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
+                    overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
                 else:
                     log.info("No confident match; running OCR fallback")
                     fallback_ocr(card, ctrl["top_pct"], tesseract_config)
