@@ -17,7 +17,7 @@ from pathlib import Path
 from collections import Counter
 
 from . import capture, crop, ocr, config, utils
-from .matcher import Matcher, MatchResult
+from .matcher import Matcher
 
 # ─────────────────────────────────────────────────────────────
 # Logging and Defaults
@@ -34,7 +34,7 @@ DEFAULTS = {
     "mid_start_pct": getattr(config, "DEFAULT_MID_START_PCT", 0.55),
     "mid_end_pct": getattr(config, "DEFAULT_MID_END_PCT", 0.63),
     "bot_pct": getattr(config, "DEFAULT_BOTTOM_PCT", 0.78),
-    "display_scale": getattr(config, "DISPLAY_SCALE", 0.7)
+    "display_scale_pct": getattr(config, "DISPLAY_SCALE", 0.7)
 }
 
 CONTROLS_WIN = "Controls"
@@ -54,7 +54,7 @@ def create_controls():
         ("Mid Start %", int(DEFAULTS["mid_start_pct"] * 100), 70),
         ("Mid End %", int(DEFAULTS["mid_end_pct"] * 100), 90),
         ("Bot %", int(DEFAULTS["bot_pct"] * 100), 95),
-        ("Display %", int(DEFAULTS["display_scale"] * 100), 200),
+        ("Display %", int(DEFAULTS["display_scale_pct"] * 100), 200),
     ]:
         cv2.createTrackbar(name, CONTROLS_WIN, default, max_val, lambda x: None)
 
@@ -84,17 +84,15 @@ def read_controls():
             return default
 
     return {
-        "pad_x": safe_pct("Pad X %", DEFAULTS["pad_x_pct"]),
-        "pad_y": safe_pct("Pad Y %", DEFAULTS["pad_y_pct"]),
+        "pad_x_pct": safe_pct("Pad X %", DEFAULTS["pad_x_pct"]),
+        "pad_y_pct": safe_pct("Pad Y %", DEFAULTS["pad_y_pct"]),
         "min_area": max(100, safe_val("Min Area", DEFAULTS["min_area"])),
         "top_pct": safe_pct("Top %", DEFAULTS["top_pct"]),
-        "mid_start": safe_pct("Mid Start %", DEFAULTS["mid_start_pct"]),
-        "mid_end": safe_pct("Mid End %", DEFAULTS["mid_end_pct"]),
+        "mid_start_pct": safe_pct("Mid Start %", DEFAULTS["mid_start_pct"]),
+        "mid_end_pct": safe_pct("Mid End %", DEFAULTS["mid_end_pct"]),
         "bot_pct": safe_pct("Bot %", DEFAULTS["bot_pct"]),
-        "display_scale": max(0.1, safe_pct("Display %", DEFAULTS["display_scale"]))
+        "display_scale_pct": max(0.1, safe_pct("Display %", DEFAULTS["display_scale_pct"]))
     }
-
-
 
 # ─────────────────────────────────────────────────────────────
 # Matching Logic
@@ -160,7 +158,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
             if box is not None:
                 cv2.drawContours(vis, [box], -1, (0, 0, 255), 3)
 
-            preview = cv2.resize(vis, (0, 0), fx=ctrl["display_scale"], fy=ctrl["display_scale"])
+            preview = cv2.resize(vis, (0, 0), fx=ctrl["display_scale_pct"], fy=ctrl["display_scale_pct"])
             cv2.imshow("Live", preview)
 
             key = cv2.waitKey(1) & 0xFF
@@ -186,19 +184,12 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 print("  h  - show this help menu\n")
 
             elif key == ord("c") and box is not None:
-                pad_x = ctrl["pad_x"]
-                pad_y = ctrl["pad_y"]
-                top_pct = ctrl["top_pct"]
-                mid_start = ctrl["mid_start"]
-                mid_end = ctrl["mid_end"]
-                bot_pct = ctrl["bot_pct"]
-
-                card = crop.crop_card_from_box(frame, box, pad_x_pct=pad_x, pad_y_pct=pad_y)
+                card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
                 if card is None or card.size == 0:
                     log.warning("Crop failed")
                     continue
 
-                snippets = crop.extract_snippets(card, top_pct, mid_start, mid_end, bot_pct)
+                snippets = crop.extract_snippets(card, ctrl["top_pct"], ctrl["mid_start_pct"], ctrl["mid_end_pct"], ctrl["bot_pct"])
                 cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
                 for label, snip in snippets:
                     cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
@@ -206,19 +197,13 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 match = confirm_match_with_retries(card, matcher, attempts=3, dist_threshold=8)
                 if match:
                     match_id, dist, card_name = match
-                    log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
-                    overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
-                    cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
-                else:
                     log.info("No confident match; running OCR fallback")
-                    fallback_ocr(card, top_pct, tesseract_config)
+                    fallback_ocr(card, ctrl["top_pct"], tesseract_config)
                     cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
 
             elif key == ord("s") and box is not None:
                 ts = int(time.time())
-                pad_x = ctrl["pad_x"]
-                pad_y = ctrl["pad_y"]
-                card = crop.crop_card_from_box(frame, box, pad_x_pct=pad_x, pad_y_pct=pad_y)
+                card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
                 if card is not None and card.size:
                     p = Path(debug_dir) / f"{ts}_card.png"
                     ok = utils.safe_imwrite(str(p), card)
