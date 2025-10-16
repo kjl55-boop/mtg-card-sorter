@@ -2,6 +2,7 @@ import os
 import cv2
 import sys
 from pathlib import Path
+import numpy as np
 
 # Add the app/ directory to Python's module search path
 sys.path.append(str(Path(__file__).resolve().parent.parent / "app"))
@@ -16,7 +17,7 @@ from recognizer.crop import crop_mana_cost
 from recognizer.symbol import isolate_mana_symbols
 import logging
 import recognizer.symbol
-print("Using symbol.py from:", recognizer.symbol.__file__)
+
 
 
 # Setup logging to file
@@ -135,6 +136,7 @@ for img_path in image_files:
 log.info("Phash test complete. Results saved to %s", log_file)
 log.info("Total images tested: %d", len(image_files))
 log.info("Images with matches: %d", match_count)
+print("Using symbol.py from:", recognizer.symbol.__file__)
 if match_count > 0:
     avg_dist = total_dist / match_count
     log.info("Average top match distance: %.2f", avg_dist)
