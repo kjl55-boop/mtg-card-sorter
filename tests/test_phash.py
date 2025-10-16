@@ -9,7 +9,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "app"))
 from recognizer.matcher import Matcher
 from recognizer.phash import compute_phash_from_gray
 from config.config import CONFIG
-from recognizer.ocr import extract_text  # ✅ optional OCR
+from recognizer.ocr import ocr_image, crop_title_band
 import logging
 
 # Setup logging to file
@@ -52,8 +52,9 @@ for img_path in image_files:
 
     # Optional OCR
     try:
-        text = extract_text(image)
-        log.info("  OCR result: %s", text.strip())
+        title_band = crop_title_band(image)
+        text, conf = ocr_image(title_band)
+        log.info("  OCR result: '%s' (confidence: %d)", text.strip(), conf)
     except Exception as e:
         log.warning("  OCR failed: %s", str(e))
 
