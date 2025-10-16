@@ -26,13 +26,9 @@ log = logging.getLogger("symbol_orb_test")
 
 # Paths
 image_dir = Path("data/symbol_test")
-output_dir = Path("data/symbol_test/crops")
-output_dir.mkdir(parents=True, exist_ok=True)
 
 # Load reference symbol DB
 symbol_db = load_symbol_db(Path("data/mana_symbols_png"))
-
-Path("data/symbol_test").mkdir(parents=True, exist_ok=True)
 
 # Scan images
 image_files = sorted(image_dir.glob("*.png")) + sorted(image_dir.glob("*.jpg"))
@@ -49,10 +45,6 @@ for img_path in image_files:
 
     try:
         mana_crop = crop_mana_cost(image)
-        # Save cropped mana band for later symbol testing
-        save_path = Path("data/symbol_test") / f"{img_path.stem}_mana.png"
-        cv2.imwrite(str(save_path), mana_crop)
-
         symbol_crops = isolate_mana_symbols(mana_crop, debug=False)
 
         if not symbol_crops:
@@ -60,11 +52,6 @@ for img_path in image_files:
             continue
 
         for i, symbol_img in enumerate(symbol_crops):
-            # Save crop
-            crop_path = output_dir / f"{img_path.stem}_symbol_{i}.png"
-            cv2.imwrite(str(crop_path), symbol_img)
-
-            # ORB match
             matches = match_mana_symbols(symbol_img, symbol_db)
             log.info("  Symbol %d → %d candidates", i+1, len(matches))
             if matches:
