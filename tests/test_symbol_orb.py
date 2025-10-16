@@ -44,6 +44,11 @@ for img_path in image_files:
         log.warning("Failed to load image: %s", img_path.name)
         continue
 
+    orb = cv2.ORB_create()
+    kp, des = orb.detectAndCompute(image, None)
+    log.info("  Keypoints detected: %d", len(kp) if kp else 0)
+
+
     try:
         matches = match_mana_symbols(image, symbol_db)
         log.info("  %d candidates", len(matches))
