@@ -25,11 +25,16 @@ def match_mana_symbols(card_img: np.ndarray, symbol_db: Dict[str, np.ndarray],
     Crop mana cost region from card image and match against reference symbols using ORB.
     Returns a list of (symbol_id, inlier_count), sorted by descending inliers.
     """
-    crop = crop_mana_cost(card_img)
+    crop = ensure_gray(crop_mana_cost(card_img))
     matches = []
     for symbol_id, symbol_img in symbol_db.items():
+        symbol_img = ensure_gray(symbol_img)
         good, inliers = verify_with_orb(crop, symbol_img, min_matches=min_matches)
         if inliers >= min_matches:
             matches.append((symbol_id, inliers))
     matches.sort(key=lambda x: -x[1])
     return matches
+
+
+def ensure_gray(img: np.ndarray) -> np.ndarray:
+    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
