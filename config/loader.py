@@ -43,8 +43,8 @@ DEFAULT_TOP_PCT = 0.12
 DEFAULT_MID_START_PCT = 0.55
 DEFAULT_MID_END_PCT = 0.63
 DEFAULT_BOTTOM_PCT = 0.78
-DEFAULT_PAD_X_PCT = 0.02
-DEFAULT_PAD_Y_PCT = 0.02
+DEFAULT_PAD_X_PCT = 0.0
+DEFAULT_PAD_Y_PCT = 0.0
 
 # ─────────────────────────────────────────────────────────────
 # Output / Normalization
