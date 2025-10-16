@@ -32,6 +32,8 @@ output_dir.mkdir(parents=True, exist_ok=True)
 # Load reference symbol DB
 symbol_db = load_symbol_db(Path("data/mana_symbols_png"))
 
+Path("data/symbol_test").mkdir(parents=True, exist_ok=True)
+
 # Scan images
 image_files = sorted(image_dir.glob("*.png")) + sorted(image_dir.glob("*.jpg"))
 if not image_files:
@@ -47,6 +49,10 @@ for img_path in image_files:
 
     try:
         mana_crop = crop_mana_cost(image)
+        # Save cropped mana band for later symbol testing
+        save_path = Path("data/symbol_test") / f"{img_path.stem}_mana.png"
+        cv2.imwrite(str(save_path), mana_crop)
+
         symbol_crops = isolate_mana_symbols(mana_crop, debug=False)
 
         if not symbol_crops:
