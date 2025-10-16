@@ -12,6 +12,7 @@ from config.config import CONFIG
 from recognizer.ocr import ocr_image, crop_title_band
 from recognizer.preprocess import preprocess_for_ocr
 from recognizer.orb import load_symbol_db, match_mana_symbols
+from recognizer.crop import crop_mana_cost
 import logging
 
 # Setup logging to file
@@ -65,12 +66,20 @@ for img_path in image_files:
         log.warning("  OCR failed: %s", str(e))
         text, conf = "", 0
 
+    # Visualize mana crop (optional)
+    try:
+        mana_crop = crop_mana_cost(image)
+        cv2.imshow("Mana Crop", cv2.resize(mana_crop, (0, 0), fx=2.0, fy=2.0))
+        cv2.waitKey(1)
+    except Exception as e:
+        log.warning("  Mana crop failed: %s", str(e))
+
     # ORB mana symbol matching (diagnostic only)
     try:
         orb_matches = match_mana_symbols(image, symbol_db)
         if orb_matches:
-            top_symbols = [s for s, _ in orb_matches[:5]]
-            log.info("  ORB-matched mana symbols: %s", top_symbols)
+            for symbol_id, inliers in orb_matches[:5]:
+                log.info("  ORB match: %s → %d inliers", symbol_id, inliers)
         else:
             log.info("  ORB found no matching symbols")
     except Exception as e:
