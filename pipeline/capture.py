@@ -32,7 +32,7 @@ from . import utils
 log = utils.get_logger("camera")
 
 from recognizer.crop import crop_card_from_box, find_card_contour
-from ..config.config import CAMERA_PREVIEW_SIZE, CAMERA_WARMUP_SEC, NORMALIZED_SIZE, DEBUG_DIR
+from config.loader import CAMERA_PREVIEW_SIZE, CAMERA_WARMUP_SEC, NORMALIZED_SIZE, DEBUG_DIR
 
 # ensure debug dir exists
 Path(DEBUG_DIR).mkdir(parents=True, exist_ok=True)

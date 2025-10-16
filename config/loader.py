@@ -4,7 +4,7 @@ Edit values here to tune behavior across modules.
 """
 
 from pathlib import Path
-import app as app_pkg
+import config as config_pkg
 
 # Camera / image sizes
 CAMERA_PREVIEW_SIZE = (2304, 1296)  # (width, height)
@@ -26,7 +26,7 @@ DEFAULT_BOTTOM_PCT = 0.78
 NORMALIZED_SIZE = (256, 356)  # typical MTG card aspect ratio; change to (width, height) you prefer
 
 # Derived paths if needed
-SCRYFALL_DB_DIR = app_pkg.SCRYFALL_DIR
-DESCRIPTORS_DIR = app_pkg.DESCRIPTORS_DIR
-DEBUG_DIR = app_pkg.DEBUG_DIR
+SCRYFALL_DB_DIR = config_pkg.SCRYFALL_DIR
+DESCRIPTORS_DIR = config_pkg.DESCRIPTORS_DIR
+DEBUG_DIR = config_pkg.DEBUG_DIR
 
