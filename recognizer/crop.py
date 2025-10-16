@@ -176,7 +176,7 @@ def crop_mana_cost(card_img: np.ndarray) -> np.ndarray:
     if card_img is None:
         return np.zeros((1, 1, 3), dtype=np.uint8)
     h, w = card_img.shape[:2]
-    x_start = int(w * 0.45)
+    x_start = int(w * 0.40)
     x_end = int(w * 0.98)
     y_start = int(h * 0.02)
     y_end = int(h * 0.12)
