@@ -16,7 +16,7 @@ import cv2
 from pathlib import Path
 from collections import Counter
 
-from ..config import config
+from config import config
 
 from . import utils
 
