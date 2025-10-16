@@ -76,9 +76,16 @@ for img_path in image_files:
             log.info("  No symbols isolated from mana band")
         else:
             # Combine all crops into one horizontal strip
-            strip = cv2.hconcat(symbol_crops)
-            band_resized = cv2.resize(mana_crop, (strip.shape[1], strip.shape[1] * mana_crop.shape[0] // strip.shape[0]))
-            combined = cv2.vconcat([band_resized, strip])
+            # Ensure mana_crop is grayscale and matches strip width and type
+            mana_gray = cv2.cvtColor(mana_crop, cv2.COLOR_BGR2GRAY) if mana_crop.ndim == 3 else mana_crop
+            mana_resized = cv2.resize(mana_gray, (strip.shape[1], strip.shape[0]), interpolation=cv2.INTER_AREA)
+
+            # Ensure both are same type and shape
+            mana_resized = mana_resized.astype(np.uint8)
+            strip = strip.astype(np.uint8)
+
+            combined = cv2.vconcat([mana_resized, strip])
+
             cv2.imshow("Mana Band + Symbols", combined)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
@@ -101,8 +108,8 @@ for img_path in image_files:
 
     # Optional: log top-k candidates for tuning
     candidates = match_phash(phash, matcher._index, top_k=5, threshold=20)
-    for i, (cid, meta, dist) in enumerate(candidates):
-        log.info("  Candidate %d: id=%s name=%s dist=%d", i+1, cid, meta.get("name", "unknown"), dist)
+    #for i, (cid, meta, dist) in enumerate(candidates):
+    #    log.info("  Candidate %d: id=%s name=%s dist=%d", i+1, cid, meta.get("name", "unknown"), dist)
 
     # Log match result
     if result.success:
