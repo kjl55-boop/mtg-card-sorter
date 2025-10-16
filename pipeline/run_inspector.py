@@ -16,7 +16,7 @@ import cv2
 from pathlib import Path
 from collections import Counter
 
-from config import loader
+from config.loader import config_pkg
 
 from . import utils
 
@@ -28,18 +28,18 @@ from recognizer.matcher import Matcher
 # Logging and Defaults
 # ─────────────────────────────────────────────────────────────
 
-utils.configure_logging(level=getattr(loader, "LOG_LEVEL", None))
+utils.configure_logging(level=getattr(config_pkg, "LOG_LEVEL", None))
 log = utils.get_logger("run_inspector")
 
 DEFAULTS = {
     "pad_x_pct": 0,
     "pad_y_pct": 0,
-    "min_area": getattr(loader, "DEFAULT_MIN_AREA", 5000),
-    "top_pct": getattr(loader, "DEFAULT_TOP_PCT", 0.12),
-    "mid_start_pct": getattr(loader, "DEFAULT_MID_START_PCT", 0.55),
-    "mid_end_pct": getattr(loader, "DEFAULT_MID_END_PCT", 0.63),
-    "bot_pct": getattr(loader, "DEFAULT_BOTTOM_PCT", 0.78),
-    "display_scale_pct": getattr(loader, "DISPLAY_SCALE", 0.7)
+    "min_area": getattr(config_pkg, "DEFAULT_MIN_AREA", 5000),
+    "top_pct": getattr(config_pkg, "DEFAULT_TOP_PCT", 0.12),
+    "mid_start_pct": getattr(config_pkg, "DEFAULT_MID_START_PCT", 0.55),
+    "mid_end_pct": getattr(config_pkg, "DEFAULT_MID_END_PCT", 0.63),
+    "bot_pct": getattr(config_pkg, "DEFAULT_BOTTOM_PCT", 0.78),
+    "display_scale_pct": getattr(config_pkg, "DISPLAY_SCALE", 0.7)
 }
 
 CONTROLS_WIN = "Controls"
@@ -195,15 +195,15 @@ def fallback_ocr(card, top_pct, tesseract_config):
 # ─────────────────────────────────────────────────────────────
 
 def run(debug_dir: str = None, tesseract_config: str = None):
-    debug_dir = debug_dir or getattr(loader, "DEBUG_DIR", "data/debug")
+    debug_dir = debug_dir or getattr(config_pkg, "DEBUG_DIR", "data/debug")
     utils.ensure_dir(debug_dir)
     log.info("Starting run_inspector; debug_dir=%s", debug_dir)
 
-    cam = capture.init_camera(preview_size=getattr(loader, "CAMERA_PREVIEW_SIZE", None))
+    cam = capture.init_camera(preview_size=getattr(config_pkg, "CAMERA_PREVIEW_SIZE", None))
     cam.autofocus()
 
     matcher = Matcher()
-    tesseract_config = tesseract_config or getattr(loader, "TESSERACT_CONFIG_TITLE", None)
+    tesseract_config = tesseract_config or getattr(config_pkg, "TESSERACT_CONFIG_TITLE", None)
 
     controls_visible = False
 
