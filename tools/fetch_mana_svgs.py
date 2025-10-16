@@ -1,15 +1,19 @@
 import requests
 from pathlib import Path
 import time
+import cairosvg
+import cv2
+import numpy as np
 
-# Output directory
-OUT_DIR = Path("data/mana_symbols")
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+# Directories
+SVG_DIR = Path("data/mana_symbols_svg")
+PNG_DIR = Path("data/mana_symbols_png")
+SVG_DIR.mkdir(parents=True, exist_ok=True)
+PNG_DIR.mkdir(parents=True, exist_ok=True)
 
-# Scryfall API endpoint
 SCRYFALL_SYMBOLS_URL = "https://api.scryfall.com/symbology"
 
-def fetch_mana_svgs():
+def fetch_and_convert_symbols():
     print("Fetching mana symbols from Scryfall...")
     try:
         response = requests.get(SCRYFALL_SYMBOLS_URL)
@@ -25,20 +29,30 @@ def fetch_mana_svgs():
         if not svg_url or not sym_text:
             continue
 
-        # Normalize filename
-        filename = f"{sym_text.replace('/', '_').replace(' ', '')}.svg"
-        out_path = OUT_DIR / filename
+        filename = f"{sym_text.replace('/', '_').replace(' ', '')}"
+        svg_path = SVG_DIR / f"{filename}.svg"
+        png_path = PNG_DIR / f"{filename}.png"
 
         try:
+            # Download SVG
             svg_data = requests.get(svg_url).content
-            with open(out_path, "wb") as f:
+            with open(svg_path, "wb") as f:
                 f.write(svg_data)
-            print(f"Saved: {filename}")
-            time.sleep(0.1)  # Be polite to Scryfall
-        except Exception as e:
-            print(f"Failed to save {filename}: {e}")
 
-    print(f"Done. Saved {len(list(OUT_DIR.glob('*.svg')))} symbols to {OUT_DIR}")
+            # Convert to PNG
+            cairosvg.svg2png(url=str(svg_path), write_to=str(png_path), output_width=64, output_height=64)
+
+            # Optional: convert to grayscale for ORB
+            img = cv2.imread(str(png_path))
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            cv2.imwrite(str(png_path), gray)
+
+            print(f"Saved: {filename}.png")
+            time.sleep(0.1)
+        except Exception as e:
+            print(f"Failed to process {filename}: {e}")
+
+    print(f"Done. Saved {len(list(PNG_DIR.glob('*.png')))} symbols to {PNG_DIR}")
 
 if __name__ == "__main__":
-    fetch_mana_svgs()
+    fetch_and_convert_symbols()
