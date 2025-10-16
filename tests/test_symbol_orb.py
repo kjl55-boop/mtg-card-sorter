@@ -26,7 +26,7 @@ logging.basicConfig(
 log = logging.getLogger("symbol_orb_test")
 
 # Paths
-image_dir = Path("data/symbol_test")
+image_dir = Path("data/symbol_test/crops")
 
 # Load reference symbol DB
 symbol_db = load_symbol_db(Path("data/mana_symbols_png"))
