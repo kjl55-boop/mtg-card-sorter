@@ -76,7 +76,7 @@ def match_phash(query_phash: str,
 
 # --- ORB verification ---
 
-def verify_with_orb(img1_bgr: np.ndarray,
+'''def verify_with_orb(img1_bgr: np.ndarray,
                     img2_bgr: np.ndarray,
                     min_matches: int = DEFAULT_ORB_MIN_MATCHES) -> Tuple[int, int]:
     orb = cv2.ORB_create(2000)
@@ -97,7 +97,7 @@ def verify_with_orb(img1_bgr: np.ndarray,
         M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
         return len(good), int(mask.sum()) if mask is not None else 0
     except Exception:
-        return len(good), 0
+        return len(good), 0'''
 
 # --- Full match pipeline ---
 
@@ -123,8 +123,8 @@ def match_card(card_bgr: np.ndarray,
         try:
             db_path = Path(best_rec["meta"]["path"])
             db_img = cv2.imread(str(db_path)) if db_path.exists() else None
-            if db_img is not None:
-                good, inliers = verify_with_orb(card_bgr, db_img)
+            #if db_img is not None:
+                #good, inliers = verify_with_orb(card_bgr, db_img)
         except Exception:
             pass
     return {
