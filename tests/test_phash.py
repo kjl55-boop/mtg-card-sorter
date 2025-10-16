@@ -15,6 +15,9 @@ from recognizer.orb import load_symbol_db, match_mana_symbols
 from recognizer.crop import crop_mana_cost
 from recognizer.symbol import isolate_mana_symbols
 import logging
+import recognizer.symbol
+print("Using symbol.py from:", recognizer.symbol.__file__)
+
 
 # Setup logging to file
 log_file = str(Path(CONFIG.logs_dir) / "phash_test_results.log")
