@@ -19,7 +19,7 @@ import uuid
 import cv2
 import numpy as np
 
-import config as config_pkg
+from config.config import CONFIG
 from . import crop
 # default component implementations; these modules should exist in the package
 from .preprocess import preprocess_for_phash
@@ -48,7 +48,7 @@ DEFAULTS = {
     "save_debug_on_failure": True,
 }
 
-DEBUG_DIR = Path(config_pkg.DEBUG_DIR)
+DEBUG_DIR = Path(CONFIG.debug_dir)
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 @dataclass
@@ -79,7 +79,7 @@ class Matcher:
         config: Optional[Dict[str, Any]] = None,
     ):
         self.config = {**DEFAULTS, **(config or {})}
-        self._index = phash_index or load_index(Path(config_pkg.DESCRIPTORS_DIR) / "phash_index.pkl")
+        self._index = phash_index or load_index(Path(CONFIG.descriptors_dir) / "phash_index.pkl")
         # injection points (use defaults if not provided)
         self.preprocess_fn = preprocess_fn or (lambda img, **kw: preprocess_for_phash(img, **kw))
         self.ocr_fn = ocr_fn or (lambda img: ocr_image(img))
@@ -89,11 +89,11 @@ class Matcher:
         log.info("Matcher initialized with phash_size=%s top_k=%s", self.config["phash_size"], self.config["top_k"])
 
     def reload_index(self, path: Optional[Path] = None):
-        path = Path(path) if path else Path(config_pkg.DESCRIPTORS_DIR) / "phash_index.pkl"
+        path = Path(path) if path else Path(CONFIG.descriptors_dir) / "phash_index.pkl"
         self._index = load_index(path)
 
     def _save_debug(self, img: np.ndarray, tag: str) -> str:
-        path = utils.save_debug_image(img, tag=tag, directory=Path(config_pkg.DEBUG_DIR))
+        path = utils.save_debug_image(img, tag=tag, directory=Path(CONFIG.debug))
         if path:
             log.debug("Saved debug image %s -> %s", tag, path)
         else:
