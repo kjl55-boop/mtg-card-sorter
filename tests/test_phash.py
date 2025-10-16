@@ -11,6 +11,7 @@ from recognizer.phash import compute_phash_from_gray, match_phash
 from config.config import CONFIG
 from recognizer.ocr import ocr_image, crop_title_band
 from recognizer.preprocess import preprocess_for_ocr
+from recognizer.orb import load_symbol_db, match_mana_symbols
 import logging
 
 # Setup logging to file
@@ -27,6 +28,9 @@ log = logging.getLogger("phash_test")
 
 # Load matcher with tuned config
 matcher = Matcher(config={**CONFIG.__dict__, "phash_threshold": 10, "orb_min_matches": 0})
+
+# Load mana symbol reference set
+symbol_db = load_symbol_db(Path("data/mana_symbols_png"))
 
 # Folder to scan
 debug_dir = Path("data/debug")
@@ -60,6 +64,17 @@ for img_path in image_files:
     except Exception as e:
         log.warning("  OCR failed: %s", str(e))
         text, conf = "", 0
+
+    # ORB mana symbol matching (diagnostic only)
+    try:
+        orb_matches = match_mana_symbols(image, symbol_db)
+        if orb_matches:
+            top_symbols = [s for s, _ in orb_matches[:5]]
+            log.info("  ORB-matched mana symbols: %s", top_symbols)
+        else:
+            log.info("  ORB found no matching symbols")
+    except Exception as e:
+        log.warning("  ORB symbol matching failed: %s", str(e))
 
     # Match
     result = matcher.match_once(image)
