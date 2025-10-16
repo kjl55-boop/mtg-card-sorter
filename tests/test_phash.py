@@ -8,7 +8,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "app"))
 
 from recognizer.matcher import Matcher
 from recognizer.phash import compute_phash_from_gray
-from config.config import load_config  # ✅ corrected import
+from config.config import CONFIG
 from recognizer.ocr import extract_text  # ✅ optional OCR
 import logging
 
@@ -25,8 +25,7 @@ logging.basicConfig(
 log = logging.getLogger("phash_test")
 
 # Load matcher
-config = load_config()
-matcher = Matcher(config)
+matcher = Matcher(CONFIG)
 
 # Folder to scan
 debug_dir = Path("data/debug")
