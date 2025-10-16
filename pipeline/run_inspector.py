@@ -38,7 +38,7 @@ DEFAULTS = {
     "top_pct": CONFIG.top_pct,
     "mid_start_pct": CONFIG.mid_start_pct,
     "mid_end_pct": CONFIG.mid_end_pct,
-    "bot_pct": CONFIG.bot_pct,
+    "bot_pct": CONFIG.bottom_pct,
     "display_scale_pct": CONFIG.display_scale
 }
 
