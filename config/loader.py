@@ -3,30 +3,60 @@ Configuration constants for the project.
 Edit values here to tune behavior across modules.
 """
 
-from pathlib import Path
-import config as config_pkg
+from . import paths
 
-# Camera / image sizes
-CAMERA_PREVIEW_SIZE = (2304, 1296)  # (width, height)
-DISPLAY_SCALE = 0.5                 # scale for GUI preview
+# ─────────────────────────────────────────────────────────────
+# Logging
+# ─────────────────────────────────────────────────────────────
+LOG_LEVEL = "INFO"  # ✅ could be a runtime flag
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+# ─────────────────────────────────────────────────────────────
+# Camera Settings
+# ─────────────────────────────────────────────────────────────
+CAMERA_PREVIEW_SIZE = (2304, 1296)  # ✅ could be a runtime flag
+CAMERA_TIMEOUT = 1.0
+AUTOFOCUS_ENABLED = True
 CAMERA_WARMUP_SEC = 0.5
+DISPLAY_SCALE = 0.5  # ✅ could be a runtime flag
 
-# ORB / hashing
-ORB_FEATURES = 1200
+# ─────────────────────────────────────────────────────────────
+# Matching / Hashing
+# ─────────────────────────────────────────────────────────────
+PHASH_THRESHOLD = 8  # ✅ could be a runtime flag
 PHASH_HAMMING_THRESHOLD = 6
+MATCH_ATTEMPTS = 3
 MATCH_TOP_K = 12
+ORB_FEATURES = 1200
 
-# Crop/snippet defaults (fractions of card height)
+# ─────────────────────────────────────────────────────────────
+# OCR Settings
+# ─────────────────────────────────────────────────────────────
+TESSERACT_CONFIG_TITLE = "--psm 7"  # ✅ could be a runtime flag
+OCR_CONFIDENCE_THRESHOLD = 0.5
+
+# ─────────────────────────────────────────────────────────────
+# Cropping Defaults
+# ─────────────────────────────────────────────────────────────
+DEFAULT_MIN_AREA = 5000
 DEFAULT_TOP_PCT = 0.12
 DEFAULT_MID_START_PCT = 0.55
 DEFAULT_MID_END_PCT = 0.63
 DEFAULT_BOTTOM_PCT = 0.78
+DEFAULT_PAD_X_PCT = 0.02
+DEFAULT_PAD_Y_PCT = 0.02
 
-# normalized output size (width, height) used for saved/normalized card images
-NORMALIZED_SIZE = (256, 356)  # typical MTG card aspect ratio; change to (width, height) you prefer
+# ─────────────────────────────────────────────────────────────
+# Output / Normalization
+# ─────────────────────────────────────────────────────────────
+NORMALIZED_SIZE = (256, 356)  # ✅ could be a runtime flag
+SAVE_CROPS_ENABLED = True
 
-# Derived paths if needed
-SCRYFALL_DB_DIR = config_pkg.SCRYFALL_DIR
-DESCRIPTORS_DIR = config_pkg.DESCRIPTORS_DIR
-DEBUG_DIR = config_pkg.DEBUG_DIR
-
+# ─────────────────────────────────────────────────────────────
+# Derived Paths
+# ─────────────────────────────────────────────────────────────
+SCRYFALL_DB_DIR = paths.SCRYFALL_DIR
+DESCRIPTORS_DIR = paths.DESCRIPTORS_DIR
+DEBUG_DIR = paths.DEBUG_DIR
+RESULTS_DIR = paths.RESULTS_DIR
+LOGS_DIR = paths.LOGS_DIR

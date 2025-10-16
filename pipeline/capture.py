@@ -32,11 +32,11 @@ from . import utils
 log = utils.get_logger("camera")
 
 from recognizer.crop import crop_card_from_box, find_card_contour
-from config.loader import CAMERA_PREVIEW_SIZE, CAMERA_WARMUP_SEC, NORMALIZED_SIZE, DEBUG_DIR
+from config.config import CONFIG
 
 # ensure debug dir exists
-Path(DEBUG_DIR).mkdir(parents=True, exist_ok=True)
-OUT_W, OUT_H = NORMALIZED_SIZE
+Path(CONFIG.debug_dir).mkdir(parents=True, exist_ok=True)
+OUT_W, OUT_H = CONFIG.normalize_size
 
 
 class CameraError(RuntimeError):
@@ -55,8 +55,8 @@ class Camera:
 
     def __init__(
         self,
-        preview_size=CAMERA_PREVIEW_SIZE,
-        warmup_sec=CAMERA_WARMUP_SEC,
+        preview_size=CONFIG.preview_size,
+        warmup_sec=CONFIG.camera_timeout,
         use_background_thread: bool = True,
         cam_index: int = 0,
     ):
@@ -267,7 +267,7 @@ def capture_frame(cam_index: int = 0, timeout: float = 2.0) -> np.ndarray:
     """
     Single-shot convenience which tries backends in order. Raises RuntimeError on failure.
     """
-    cam = Camera(preview_size=CAMERA_PREVIEW_SIZE, warmup_sec=CAMERA_WARMUP_SEC, use_background_thread=False, cam_index=cam_index)
+    cam = Camera(preview_size=CONFIG.camera_preview_size, warmup_sec=CONFIG.camera_warmup_sec, use_background_thread=False, cam_index=cam_index)
     cam.start()
     try:
         img = cam.read(timeout=timeout)
@@ -283,7 +283,7 @@ def init_camera(preview_size: Optional[tuple] = None) -> Camera:
     """
     Create, start, and return a Camera instance for long-running use.
     """
-    c = Camera(preview_size=preview_size or CAMERA_PREVIEW_SIZE, warmup_sec=CAMERA_WARMUP_SEC, use_background_thread=True)
+    c = Camera(preview_size=preview_size or CONFIG.camera_preview_size, warmup_sec=CONFIG.camera_warmup_sec, use_background_thread=True)
     c.start()
     return c
 
@@ -331,7 +331,7 @@ def normalize_and_save(
         raise RuntimeError("normalize_and_save: crop failed")
 
     norm = cv2.resize(card, (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
-    p = Path(DEBUG_DIR) / filename
+    p = Path(CONFIG.debug_dir) / filename
     p.parent.mkdir(parents=True, exist_ok=True)
     written = utils.safe_imwrite(str(p), norm)
     if not written:

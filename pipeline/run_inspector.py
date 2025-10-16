@@ -16,7 +16,7 @@ import cv2
 from pathlib import Path
 from collections import Counter
 
-from config.loader import config_pkg
+from config.config import CONFIG
 
 from . import utils
 
@@ -28,18 +28,18 @@ from recognizer.matcher import Matcher
 # Logging and Defaults
 # ─────────────────────────────────────────────────────────────
 
-utils.configure_logging(level=getattr(config_pkg, "LOG_LEVEL", None))
+utils.configure_logging(level=CONFIG.log_level)
 log = utils.get_logger("run_inspector")
 
 DEFAULTS = {
-    "pad_x_pct": 0,
-    "pad_y_pct": 0,
-    "min_area": getattr(config_pkg, "DEFAULT_MIN_AREA", 5000),
-    "top_pct": getattr(config_pkg, "DEFAULT_TOP_PCT", 0.12),
-    "mid_start_pct": getattr(config_pkg, "DEFAULT_MID_START_PCT", 0.55),
-    "mid_end_pct": getattr(config_pkg, "DEFAULT_MID_END_PCT", 0.63),
-    "bot_pct": getattr(config_pkg, "DEFAULT_BOTTOM_PCT", 0.78),
-    "display_scale_pct": getattr(config_pkg, "DISPLAY_SCALE", 0.7)
+    "pad_x_pct": CONFIG.pad_x_pct,
+    "pad_y_pct": CONFIG.pad_y_pct,
+    "min_area": CONFIG.min_area,
+    "top_pct": CONFIG.top_pct,
+    "mid_start_pct": CONFIG.mid_start_pct,
+    "mid_end_pct": CONFIG.mid_end_pct,
+    "bot_pct": CONFIG.bot_pct,
+    "display_scale_pct": CONFIG.display_scale
 }
 
 CONTROLS_WIN = "Controls"
@@ -195,27 +195,38 @@ def fallback_ocr(card, top_pct, tesseract_config):
 # ─────────────────────────────────────────────────────────────
 
 def run(debug_dir: str = None, tesseract_config: str = None):
-    debug_dir = debug_dir or getattr(config_pkg, "DEBUG_DIR", "data/debug")
+    debug_dir = debug_dir or CONFIG.debug_dir
     utils.ensure_dir(debug_dir)
     log.info("Starting run_inspector; debug_dir=%s", debug_dir)
 
-    cam = capture.init_camera(preview_size=getattr(config_pkg, "CAMERA_PREVIEW_SIZE", None))
-    cam.autofocus()
+    cam = capture.init_camera(preview_size=CONFIG.preview_size)
+    if CONFIG.autofocus_enabled:
+        cam.autofocus()
 
-    matcher = Matcher()
-    tesseract_config = tesseract_config or getattr(config_pkg, "TESSERACT_CONFIG_TITLE", None)
+    matcher = Matcher(config={"phash_threshold": CONFIG.phash_threshold})
+    tesseract_config = tesseract_config or CONFIG.tesseract_config
 
     controls_visible = False
 
     try:
         while True:
-            frame = capture.grab_frame(cam, timeout=1.0)
+            frame = capture.grab_frame(cam, timeout=CONFIG.camera_timeout)
             if frame is None:
                 log.warning("No frame read from camera; retrying")
                 time.sleep(0.1)
                 continue
 
-            ctrl = read_controls() if controls_visible and controls_open() else DEFAULTS
+            ctrl = read_controls() if controls_visible and controls_open() else {
+                "pad_x_pct": CONFIG.pad_x_pct,
+                "pad_y_pct": CONFIG.pad_y_pct,
+                "min_area": CONFIG.min_area,
+                "top_pct": CONFIG.top_pct,
+                "mid_start_pct": CONFIG.mid_start_pct,
+                "mid_end_pct": CONFIG.mid_end_pct,
+                "bot_pct": CONFIG.bot_pct,
+                "display_scale_pct": CONFIG.display_scale
+            }
+
             box, contour = crop.find_card_contour(frame, min_area=ctrl["min_area"])
             vis = frame.copy()
             if box is not None:
@@ -259,7 +270,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                 for label, snip in snippets:
                     cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
 
-                match = match_with_shudder_capture(cam, matcher, box)
+                match = match_with_shudder_capture(cam, matcher, box, attempts=CONFIG.match_attempts, dist_threshold=CONFIG.phash_threshold)
                 if match:
                     match_id, dist, card_name = match
                     log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
@@ -268,9 +279,7 @@ def run(debug_dir: str = None, tesseract_config: str = None):
                     log.info("No confident match; running OCR fallback")
                     fallback_ocr(card, ctrl["top_pct"], tesseract_config)
 
-
                 cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
-
 
             elif key == ord("s") and box is not None:
                 ts = int(time.time())
@@ -295,5 +304,3 @@ def run(debug_dir: str = None, tesseract_config: str = None):
         cv2.destroyAllWindows()
         log.info("Inspector stopped")
 
-if __name__ == "__main__":
-    run()
