@@ -36,7 +36,7 @@ from config.config import CONFIG
 
 # ensure debug dir exists
 Path(CONFIG.debug_dir).mkdir(parents=True, exist_ok=True)
-OUT_W, OUT_H = CONFIG.normalize_size
+OUT_W, OUT_H = CONFIG.normalized_size
 
 
 class CameraError(RuntimeError):
