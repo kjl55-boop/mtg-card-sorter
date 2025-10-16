@@ -38,7 +38,7 @@ def match_mana_symbols(card_img: np.ndarray, symbol_db: Dict[str, np.ndarray],
 
 def verify_symbol_orb(img1: np.ndarray,
                     img2: np.ndarray,
-                    min_matches: int = CONFIG.default_orb_min_matches) -> Tuple[int, int]:
+                    min_matches: int = 8) -> Tuple[int, int]:
     def ensure_gray(img: np.ndarray) -> np.ndarray:
         return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
 
