@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent / "app"))
 
 from recognizer.matcher import Matcher
-from recognizer.phash import compute_phash
+from recognizer.phash import compute_phash_from_gray
 from config.config import load_config  # ✅ corrected import
 from recognizer.ocr import extract_text  # ✅ optional OCR
 import logging
@@ -47,7 +47,8 @@ for img_path in image_files:
         continue
 
     # Log phash
-    phash = compute_phash(image)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    phash = compute_phash_from_gray(gray)
     log.info("  Computed phash: %s", phash)
 
     # Optional OCR
