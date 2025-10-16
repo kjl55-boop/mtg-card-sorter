@@ -2,14 +2,18 @@ import cv2
 import numpy as np
 from typing import List, Tuple
 
-def pad_crop(crop: np.ndarray, target_size: int = 64, margin: int = 4) -> np.ndarray:
+def center_crop(crop: np.ndarray, target_size: int = 64) -> np.ndarray:
     """
-    Pads a symbol crop with margin before resizing to target_size x target_size.
+    Centers a symbol crop in a square canvas before resizing.
     """
     h, w = crop.shape
-    padded = cv2.copyMakeBorder(crop, margin, margin, margin, margin,
-                                borderType=cv2.BORDER_CONSTANT, value=0)
-    return cv2.resize(padded, (target_size, target_size), interpolation=cv2.INTER_CUBIC)
+    size = max(h, w)
+    canvas = np.zeros((size, size), dtype=np.uint8)
+    y_offset = (size - h) // 2
+    x_offset = (size - w) // 2
+    canvas[y_offset:y_offset+h, x_offset:x_offset+w] = crop
+    return cv2.resize(canvas, (target_size, target_size), interpolation=cv2.INTER_CUBIC)
+
 
 def isolate_mana_symbols(band_img: np.ndarray, debug: bool = False) -> List[np.ndarray]:
     """
@@ -29,10 +33,16 @@ def isolate_mana_symbols(band_img: np.ndarray, debug: bool = False) -> List[np.n
         aspect = w / h
         area = cv2.contourArea(cnt)
 
+        if debug:
+            overlay = band_img.copy()
+            cv2.rectangle(overlay, (x, y), (x+w, y+h), (0, 255, 0), 1)
+            cv2.imshow("Contours", overlay)
+
+
         # Filter: roughly circular, reasonable size, not too narrow
         if w > 10 and h > 10 and 0.8 < aspect < 1.2 and 100 < area < 2000:
             crop = gray[y:y+h, x:x+w]
-            padded = pad_crop(crop)
+            padded = center_crop(crop)
             symbols.append((x, padded))
 
             if debug:

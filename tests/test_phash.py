@@ -117,11 +117,16 @@ for img_path in image_files:
 
             for i, symbol_img in enumerate(symbol_crops):
                 matches = match_mana_symbols(symbol_img, symbol_db)
+                log.info("  Symbol %d → %d candidates", i+1, len(matches))
                 if matches:
                     top = matches[0]
-                    log.info("  Symbol %d → Best match: %s (%d inliers)", i+1, top[0], top[1])
+                    log.info("    Best match: %s (%d inliers)", top[0], top[1])
                 else:
-                    log.info("  Symbol %d → No match found", i+1)
+                    log.info("    No match found")
+
+                # Optional: save crop for inspection
+                cv2.imwrite(f"data/debug/symbol_{i}.png", symbol_img)
+
     except Exception as e:
         log.warning("  Symbol isolation/matching failed: %s", str(e))
 
