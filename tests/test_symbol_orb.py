@@ -45,23 +45,17 @@ for img_path in image_files:
         continue
 
     try:
-        mana_crop = crop_mana_cost(image)
-        symbol_crops = isolate_mana_symbols(mana_crop, debug=False)
-
-        if not symbol_crops:
-            log.info("  No symbols isolated from mana band")
-            continue
-
-        for i, symbol_img in enumerate(symbol_crops):
-            matches = match_mana_symbols(symbol_img, symbol_db)
-            log.info("  Symbol %d → %d candidates", i+1, len(matches))
-            if matches:
-                top = matches[0]
-                log.info("    Best match: %s (%d inliers)", top[0], top[1])
-            else:
-                log.info("    No match found")
-
+        matches = match_mana_symbols(image, symbol_db)
+        log.info("  %d candidates", len(matches))
+        if matches:
+            top = matches[0]
+            log.info("    Best match: %s (%d inliers)", top[0], top[1])
+        else:
+            log.info("    No match found")
     except Exception as e:
-        log.warning("  Symbol isolation/matching failed: %s", str(e))
+        log.warning("  ORB matching failed: %s", str(e))
+
 
 log.info("Symbol ORB test complete. Results saved to %s", log_file)
+log.info("Total symbol crops tested: %d", len(image_files))
+
