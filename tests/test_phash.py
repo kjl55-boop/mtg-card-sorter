@@ -25,7 +25,7 @@ logging.basicConfig(
 log = logging.getLogger("phash_test")
 
 # Load matcher
-matcher = Matcher(CONFIG)
+matcher = Matcher(config=CONFIG.__dict__)
 
 # Folder to scan
 debug_dir = Path("data/debug")
