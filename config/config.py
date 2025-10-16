@@ -23,6 +23,7 @@ CONFIG = SimpleNamespace(
     preview_size=(args.preview_width, args.preview_height) if args.preview_width and args.preview_height else loader.CAMERA_PREVIEW_SIZE,
     display_scale=args.display_scale or loader.DISPLAY_SCALE,
     camera_timeout=loader.CAMERA_TIMEOUT,
+    camera_warmup_sec = loader.CAMERA_WARMUP_SEC,
     autofocus_enabled=loader.AUTOFOCUS_ENABLED,
 
     # Matching
