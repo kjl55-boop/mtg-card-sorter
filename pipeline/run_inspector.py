@@ -153,6 +153,7 @@ def match_with_shudder_capture(camera, matcher, box, attempts=3, dist_threshold=
         if frame is None:
             continue
         card = crop.crop_card_from_box(frame, box, pad_x_pct=0.0, pad_y_pct=0.0)
+
         result = matcher.match_with_policy(card)
         if result and result.success and result.dist is not None and result.dist <= dist_threshold:
             card_name = result.meta.get("name", "unknown")
@@ -260,6 +261,8 @@ def run(debug_dir: str = None, tesseract_config: str = None):
             elif key == ord("c") and box is not None:
                 log.info("Capture triggered")
                 card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
+                mana_crop = crop.crop_mana_cost(card)
+                cv2.imshow("Mana Cost", cv2.resize(mana_crop, (0, 0), fx=2.0, fy=2.0))
                 if card is None or card.size == 0:
                     log.warning("Crop failed")
                     continue
