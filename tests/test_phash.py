@@ -59,17 +59,22 @@ for img_path in image_files:
         log.warning("  OCR failed: %s", str(e))
 
     # Match
-    top_matches = matcher.debug_match(image, top_k=5)
-    if not top_matches:
-        log.info("  No phash candidates found for %s", img_path.name)
+    # Match
+    result = matcher.match_once(image)
+    if result is None:
+        log.warning("  Matcher returned None — index may be empty or invalid")
         continue
 
-    match_count += 1
-    total_dist += top_matches[0][2]  # distance of top match
+    if result.success:
+        match_count += 1
+        total_dist += result.dist or 0
+        log.info("  Match ID: %s", result.id)
+        log.info("  Name: %s", result.meta.get("name", "unknown"))
+        log.info("  Distance: %d", result.dist)
+        log.info("  ORB matches: %d, inliers: %d", result.orb_matches, result.inliers)
+    else:
+        log.info("  No match found (best dist: %s)", result.dist)
 
-    for i, (match_id, match_meta, dist) in enumerate(top_matches):
-        name = match_meta.get("name", "unknown")
-        log.info("  Rank %d: id=%s name=%s dist=%d", i + 1, match_id, name, dist)
 
 # Summary
 log.info("Phash test complete. Results saved to %s", log_file)
