@@ -168,6 +168,21 @@ def extract_snippets(card_img: np.ndarray, top_pct: float, mid_start_pct: float,
     bottom = card_img[bot_y:, :].copy()
     return [("Top", top), ("Middle", middle), ("Bottom", bottom)]
 
+def crop_mana_cost(card_img: np.ndarray) -> np.ndarray:
+    """
+    Extract the top-right region of the card where mana cost symbols typically appear.
+    Returns a BGR crop suitable for ORB matching.
+    """
+    if card_img is None:
+        return np.zeros((1, 1, 3), dtype=np.uint8)
+    h, w = card_img.shape[:2]
+    x_start = int(w * 0.65)
+    x_end = int(w * 0.98)
+    y_start = int(h * 0.02)
+    y_end = int(h * 0.10)
+    return card_img[y_start:y_end, x_start:x_end].copy()
+
+
 # -----------------------
 # Simple CLI test and examples
 # -----------------------
