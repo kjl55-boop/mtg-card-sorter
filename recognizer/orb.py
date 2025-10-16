@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
-from recognizer.phash import verify_with_orb
+#from recognizer.phash import verify_with_orb
 from recognizer.crop import crop_mana_cost
 from config.config import CONFIG
 
