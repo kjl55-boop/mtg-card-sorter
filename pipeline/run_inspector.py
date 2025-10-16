@@ -304,3 +304,5 @@ def run(debug_dir: str = None, tesseract_config: str = None):
         cv2.destroyAllWindows()
         log.info("Inspector stopped")
 
+if __name__ == "__main__":
+    run()
