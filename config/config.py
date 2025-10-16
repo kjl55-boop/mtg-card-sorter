@@ -14,6 +14,7 @@ CONFIG = SimpleNamespace(
     debug_dir=args.debug_dir or loader.DEBUG_DIR,
     results_dir=paths.RESULTS_DIR,
     logs_dir=paths.LOGS_DIR,
+    descriptors_dir = paths.DESCRIPTORS_DIR,
 
     # Logging
     log_level=args.log_level or loader.LOG_LEVEL,
