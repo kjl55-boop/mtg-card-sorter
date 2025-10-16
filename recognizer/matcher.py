@@ -26,7 +26,7 @@ from .preprocess import preprocess_for_phash
 from .phash import (
     compute_phash_from_gray,
     match_phash,
-    verify_with_orb,
+    #verify_with_orb,
     load_index,
 )
 from .ocr import crop_title_band, ocr_image
@@ -132,8 +132,8 @@ class Matcher:
                 try:
                     db_path = Path(best_rec["meta"].get("path", ""))
                     db_img = cv2.imread(str(db_path)) if db_path.exists() else None
-                    if db_img is not None:
-                        good, inls = verify_with_orb(card_bgr, db_img, min_matches=cfg["orb_min_matches"])
+                    #if db_img is not None:
+                    #    good, inls = verify_with_orb(card_bgr, db_img, min_matches=cfg["orb_min_matches"])
                 except Exception:
                     good, inls = 0, 0
             result.success = True
