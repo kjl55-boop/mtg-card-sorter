@@ -152,7 +152,7 @@ def match_with_shudder_capture(camera, matcher, box, attempts=3, dist_threshold=
         frame = camera.read(timeout=1.0)
         if frame is None:
             continue
-        card = crop.crop_card_from_box(frame, box, pad_x_pct=0.02, pad_y_pct=0.02)
+        card = crop.crop_card_from_box(frame, box, pad_x_pct=0.0, pad_y_pct=0.0)
         result = matcher.match_with_policy(card)
         if result and result.success and result.dist is not None and result.dist <= dist_threshold:
             card_name = result.meta.get("name", "unknown")
