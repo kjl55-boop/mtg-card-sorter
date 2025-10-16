@@ -14,7 +14,6 @@ from recognizer.preprocess import preprocess_for_ocr
 from recognizer.orb import load_symbol_db, match_mana_symbols
 from recognizer.crop import crop_mana_cost
 from recognizer.symbol import isolate_mana_symbols
-
 import logging
 
 # Setup logging to file
@@ -68,14 +67,6 @@ for img_path in image_files:
         log.warning("  OCR failed: %s", str(e))
         text, conf = "", 0
 
-    # Visualize mana crop (optional)
-    try:
-        mana_crop = crop_mana_cost(image)
-        cv2.imshow("Mana Crop", cv2.resize(mana_crop, (0, 0), fx=2.0, fy=2.0))
-        cv2.waitKey(1)
-    except Exception as e:
-        log.warning("  Mana crop failed: %s", str(e))
-
     # Isolate and match individual mana symbols
     try:
         mana_crop = crop_mana_cost(image)
@@ -84,10 +75,15 @@ for img_path in image_files:
         if not symbol_crops:
             log.info("  No symbols isolated from mana band")
         else:
-            for i, symbol_img in enumerate(symbol_crops):
-                cv2.imshow(f"Symbol {i+1}", symbol_img)
-                cv2.waitKey(1)
+            # Combine all crops into one horizontal strip
+            strip = cv2.hconcat(symbol_crops)
+            band_resized = cv2.resize(mana_crop, (strip.shape[1], strip.shape[1] * mana_crop.shape[0] // strip.shape[0]))
+            combined = cv2.vconcat([band_resized, strip])
+            cv2.imshow("Mana Band + Symbols", combined)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
 
+            for i, symbol_img in enumerate(symbol_crops):
                 matches = match_mana_symbols(symbol_img, symbol_db)
                 if matches:
                     top = matches[0]
@@ -96,7 +92,6 @@ for img_path in image_files:
                     log.info("  Symbol %d → No match found", i+1)
     except Exception as e:
         log.warning("  Symbol isolation/matching failed: %s", str(e))
-
 
     # Match
     result = matcher.match_once(image)
