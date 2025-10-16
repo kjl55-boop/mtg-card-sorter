@@ -13,6 +13,8 @@ from recognizer.ocr import ocr_image, crop_title_band
 from recognizer.preprocess import preprocess_for_ocr
 from recognizer.orb import load_symbol_db, match_mana_symbols
 from recognizer.crop import crop_mana_cost
+from recognizer.symbol import isolate_mana_symbols
+
 import logging
 
 # Setup logging to file
@@ -74,16 +76,27 @@ for img_path in image_files:
     except Exception as e:
         log.warning("  Mana crop failed: %s", str(e))
 
-    # ORB mana symbol matching (diagnostic only)
+    # Isolate and match individual mana symbols
     try:
-        orb_matches = match_mana_symbols(image, symbol_db)
-        if orb_matches:
-            for symbol_id, inliers in orb_matches[:5]:
-                log.info("  ORB match: %s → %d inliers", symbol_id, inliers)
+        mana_crop = crop_mana_cost(image)
+        symbol_crops = isolate_mana_symbols(mana_crop, debug=False)
+
+        if not symbol_crops:
+            log.info("  No symbols isolated from mana band")
         else:
-            log.info("  ORB found no matching symbols")
+            for i, symbol_img in enumerate(symbol_crops):
+                cv2.imshow(f"Symbol {i+1}", symbol_img)
+                cv2.waitKey(1)
+
+                matches = match_mana_symbols(symbol_img, symbol_db)
+                if matches:
+                    top = matches[0]
+                    log.info("  Symbol %d → Best match: %s (%d inliers)", i+1, top[0], top[1])
+                else:
+                    log.info("  Symbol %d → No match found", i+1)
     except Exception as e:
-        log.warning("  ORB symbol matching failed: %s", str(e))
+        log.warning("  Symbol isolation/matching failed: %s", str(e))
+
 
     # Match
     result = matcher.match_once(image)
