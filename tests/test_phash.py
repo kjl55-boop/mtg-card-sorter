@@ -79,23 +79,26 @@ for img_path in image_files:
         if not symbol_crops:
             log.info("  No symbols isolated from mana band")
         else:
-            # Combine all crops into one horizontal strip
+            # Create symbol strip
             strip = cv2.hconcat(symbol_crops)
 
-            # Ensure mana_crop is grayscale and matches strip width and type
+            # Resize mana band to fixed height
+            target_height = 64
             mana_gray = cv2.cvtColor(mana_crop, cv2.COLOR_BGR2GRAY) if mana_crop.ndim == 3 else mana_crop
-            mana_resized = cv2.resize(mana_gray, (strip.shape[1], strip.shape[0]), interpolation=cv2.INTER_AREA)
+            mana_resized = cv2.resize(mana_gray, (mana_gray.shape[1], target_height), interpolation=cv2.INTER_AREA)
 
-            # Ensure both are same type and shape
-            mana_resized = mana_resized.astype(np.uint8)
-            strip = strip.astype(np.uint8)
+            # Resize symbol strip to match band width
+            strip_resized = cv2.resize(strip, (mana_resized.shape[1], target_height), interpolation=cv2.INTER_AREA)
 
-            combined = cv2.vconcat([mana_resized, strip])
+            # Optional: pad mana band for visual clarity
+            mana_padded = cv2.copyMakeBorder(mana_resized, 4, 4, 4, 4, cv2.BORDER_CONSTANT, value=0)
 
-
+            # Stack and show
+            combined = cv2.vconcat([mana_padded, strip_resized])
             cv2.imshow("Mana Band + Symbols", combined)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
+
 
             for i, symbol_img in enumerate(symbol_crops):
                 matches = match_mana_symbols(symbol_img, symbol_db)
