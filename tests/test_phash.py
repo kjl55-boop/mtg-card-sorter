@@ -74,6 +74,12 @@ for img_path in image_files:
     # Isolate and match individual mana symbols
     try:
         mana_crop = crop_mana_cost(image)
+        # Save cropped mana band for later symbol testing
+        symbol_test_dir = Path("data/symbol_test")
+        symbol_test_dir.mkdir(parents=True, exist_ok=True)
+        mana_save_path = symbol_test_dir / f"{img_path.stem}_mana.png"
+        cv2.imwrite(str(mana_save_path), mana_crop)
+
         symbol_crops = isolate_mana_symbols(mana_crop, debug=False)
 
         if not symbol_crops:
