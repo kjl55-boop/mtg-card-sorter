@@ -27,6 +27,10 @@ def match_mana_symbols(card_img: np.ndarray, symbol_db: Dict[str, np.ndarray],
     Returns a list of (symbol_id, inlier_count), sorted by descending inliers.
     """
     crop = ensure_gray(crop_mana_cost(card_img))
+
+    # 🔧 Scale the crop to match reference symbol size (e.g. 64x64)
+    crop = cv2.resize(crop, (64, 64), interpolation=cv2.INTER_CUBIC)
+
     matches = []
     for symbol_id, symbol_img in symbol_db.items():
         symbol_img = ensure_gray(symbol_img)
