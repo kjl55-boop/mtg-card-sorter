@@ -18,8 +18,6 @@ from recognizer.symbol import isolate_mana_symbols
 import logging
 import recognizer.symbol
 
-
-
 # Setup logging to file
 log_file = str(Path(CONFIG.logs_dir) / "phash_test_results.log")
 logging.basicConfig(
@@ -45,6 +43,10 @@ image_files = sorted(debug_dir.glob("*.png")) + sorted(debug_dir.glob("*.jpg"))
 if not image_files:
     log.warning("No images found in %s", debug_dir)
     exit()
+
+# Prepare output folder for symbol crops
+symbol_crop_dir = Path("data/symbol_test/crops")
+symbol_crop_dir.mkdir(parents=True, exist_ok=True)
 
 match_count = 0
 total_dist = 0
@@ -74,78 +76,35 @@ for img_path in image_files:
     # Isolate and match individual mana symbols
     try:
         mana_crop = crop_mana_cost(image)
-        # Save cropped mana band for later symbol testing
-        symbol_test_dir = Path("data/symbol_test")
-        symbol_test_dir.mkdir(parents=True, exist_ok=True)
-        mana_save_path = symbol_test_dir / f"{img_path.stem}_mana.png"
-        cv2.imwrite(str(mana_save_path), mana_crop)
-
         symbol_crops = isolate_mana_symbols(mana_crop, debug=False)
 
         if not symbol_crops:
             log.info("  No symbols isolated from mana band")
         else:
-            # Create symbol strip
-            strip = cv2.hconcat(symbol_crops)
-
-            # Resize mana band to fixed height
-            target_height = 64
-            mana_gray = cv2.cvtColor(mana_crop, cv2.COLOR_BGR2GRAY) if mana_crop.ndim == 3 else mana_crop
-            mana_resized = cv2.resize(mana_gray, (mana_gray.shape[1], target_height), interpolation=cv2.INTER_AREA)
-
-            # Resize symbol strip to match band width
-            strip_resized = cv2.resize(strip, (mana_resized.shape[1], target_height), interpolation=cv2.INTER_AREA)
-
-            # Optional: pad mana band for visual clarity
-            mana_padded = cv2.copyMakeBorder(mana_resized, 4, 4, 4, 4, cv2.BORDER_CONSTANT, value=0)
-
-            # Stack and show
-            # Ensure both are grayscale and same type
-            if mana_padded.ndim == 3:
-                mana_padded = cv2.cvtColor(mana_padded, cv2.COLOR_BGR2GRAY)
-            if strip_resized.ndim == 3:
-                strip_resized = cv2.cvtColor(strip_resized, cv2.COLOR_BGR2GRAY)
-
-            mana_padded = mana_padded.astype(np.uint8)
-            strip_resized = strip_resized.astype(np.uint8)
-
-            # Ensure same width
-            min_width = min(mana_padded.shape[1], strip_resized.shape[1])
-            mana_padded = cv2.resize(mana_padded, (min_width, mana_padded.shape[0]), interpolation=cv2.INTER_AREA)
-            strip_resized = cv2.resize(strip_resized, (min_width, strip_resized.shape[0]), interpolation=cv2.INTER_AREA)
-
-            combined = cv2.vconcat([mana_padded, strip_resized])
-
-            cv2.imshow("Mana Band + Symbols", combined)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-
-
+            log.info("  Isolated %d symbols", len(symbol_crops))
             for i, symbol_img in enumerate(symbol_crops):
+                # Save symbol crop
+                crop_path = symbol_crop_dir / f"{img_path.stem}_symbol_{i}.png"
+                cv2.imwrite(str(crop_path), symbol_img)
+                log.info("    Saved symbol %d → %s", i+1, crop_path.name)
+
+                # ORB match
                 matches = match_mana_symbols(symbol_img, symbol_db)
-                log.info("  Symbol %d → %d candidates", i+1, len(matches))
+                log.info("    Symbol %d → %d candidates", i+1, len(matches))
                 if matches:
                     top = matches[0]
-                    log.info("    Best match: %s (%d inliers)", top[0], top[1])
+                    log.info("      Best match: %s (%d inliers)", top[0], top[1])
                 else:
-                    log.info("    No match found")
-
-                # Optional: save crop for inspection
-                cv2.imwrite(f"data/debug/symbol_{i}.png", symbol_img)
+                    log.info("      No match found")
 
     except Exception as e:
         log.warning("  Symbol isolation/matching failed: %s", str(e))
 
-    # Match
+    # Match full image
     result = matcher.match_once(image)
     if result is None:
         log.warning("  Matcher returned None — index may be empty or invalid")
         continue
-
-    # Optional: log top-k candidates for tuning
-    candidates = match_phash(phash, matcher._index, top_k=5, threshold=20)
-    #for i, (cid, meta, dist) in enumerate(candidates):
-    #    log.info("  Candidate %d: id=%s name=%s dist=%d", i+1, cid, meta.get("name", "unknown"), dist)
 
     # Log match result
     if result.success:
