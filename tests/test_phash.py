@@ -94,7 +94,22 @@ for img_path in image_files:
             mana_padded = cv2.copyMakeBorder(mana_resized, 4, 4, 4, 4, cv2.BORDER_CONSTANT, value=0)
 
             # Stack and show
+            # Ensure both are grayscale and same type
+            if mana_padded.ndim == 3:
+                mana_padded = cv2.cvtColor(mana_padded, cv2.COLOR_BGR2GRAY)
+            if strip_resized.ndim == 3:
+                strip_resized = cv2.cvtColor(strip_resized, cv2.COLOR_BGR2GRAY)
+
+            mana_padded = mana_padded.astype(np.uint8)
+            strip_resized = strip_resized.astype(np.uint8)
+
+            # Ensure same width
+            min_width = min(mana_padded.shape[1], strip_resized.shape[1])
+            mana_padded = cv2.resize(mana_padded, (min_width, mana_padded.shape[0]), interpolation=cv2.INTER_AREA)
+            strip_resized = cv2.resize(strip_resized, (min_width, strip_resized.shape[0]), interpolation=cv2.INTER_AREA)
+
             combined = cv2.vconcat([mana_padded, strip_resized])
+
             cv2.imshow("Mana Band + Symbols", combined)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
