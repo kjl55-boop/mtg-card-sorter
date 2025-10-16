@@ -12,8 +12,9 @@ from recognizer.crop import crop_mana_cost
 from recognizer.symbol import isolate_mana_symbols
 from recognizer.orb import load_symbol_db, match_mana_symbols
 
-# Setup logging
-log_file = "symbol_orb_test.log"
+# Setup logging to logs folder
+Path("logs").mkdir(parents=True, exist_ok=True)
+log_file = str(Path("logs") / "symbol_orb_test.log")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
