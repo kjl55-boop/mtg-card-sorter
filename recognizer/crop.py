@@ -119,7 +119,7 @@ def crop_card_from_box(frame: np.ndarray, box: np.ndarray,
     except Exception:
         return (None, None) if return_transform else None
 
-def extract_snippets(card_img: np.ndarray) -> List[Tuple[str, np.ndarray]]:
+def slice_regions(card_img: np.ndarray) -> List[Tuple[str, np.ndarray]]:
     """
     Legacy wrapper for region slicing. Uses CardSlicer internally.
     """

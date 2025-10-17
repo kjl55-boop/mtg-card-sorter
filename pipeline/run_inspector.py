@@ -236,10 +236,11 @@ def run(debug_dir: str = None):
                     continue
                 log.info("Card cropped successfully: shape=%s", card.shape)
 
-                snippets = crop.extract_snippets(card, ctrl["top_pct"], ctrl["mid_start_pct"], ctrl["mid_end_pct"], ctrl["bot_pct"])
-                cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
-                for label, snip in snippets:
-                    cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
+                regions = crop.slice_regions(card, ctrl["top_pct"], ctrl["mid_start_pct"], ctrl["mid_end_pct"], ctrl["bot_pct"])
+                for label, region in regions:
+                    cv2.imshow(f"Region - {label}", cv2.resize(region, (0, 0), fx=0.6, fy=0.6))
+
+
 
                 match = match_with_shudder_capture(cam, matcher, box, attempts=CONFIG.match_attempts, dist_threshold=CONFIG.phash_threshold)
                 if match:
