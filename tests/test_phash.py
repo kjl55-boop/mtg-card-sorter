@@ -8,7 +8,7 @@ import numpy as np
 sys.path.append(str(Path(__file__).resolve().parent.parent / "app"))
 
 from recognizer.matcher import Matcher
-from recognizer.phash import compute_phash_from_gray, match_phash
+from recognizer.phash.phash import compute_phash_from_gray, match_phash
 from config.config import CONFIG
 from recognizer.ocr import ocr_image, crop_title_band
 from recognizer.preprocess import preprocess_for_ocr

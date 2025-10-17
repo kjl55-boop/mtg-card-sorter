@@ -14,7 +14,7 @@ CONFIG = SimpleNamespace(
     debug_dir=args.debug_dir or loader.DEBUG_DIR,
     results_dir=paths.RESULTS_DIR,
     logs_dir=paths.LOGS_DIR,
-    descriptors_dir = paths.DESCRIPTORS_DIR,
+    descriptors_dir=paths.DESCRIPTORS_DIR,
 
     # Logging
     log_level=args.log_level or loader.LOG_LEVEL,
@@ -24,16 +24,12 @@ CONFIG = SimpleNamespace(
     preview_size=(args.preview_width, args.preview_height) if args.preview_width and args.preview_height else loader.CAMERA_PREVIEW_SIZE,
     display_scale=args.display_scale or loader.DISPLAY_SCALE,
     camera_timeout=loader.CAMERA_TIMEOUT,
-    camera_warmup_sec = loader.CAMERA_WARMUP_SEC,
+    camera_warmup_sec=loader.CAMERA_WARMUP_SEC,
     autofocus_enabled=loader.AUTOFOCUS_ENABLED,
 
     # Matching
     phash_threshold=args.phash_threshold or loader.PHASH_THRESHOLD,
     match_attempts=args.match_attempts or loader.MATCH_ATTEMPTS,
-
-    # OCR
-    tesseract_config=args.tesseract_config or loader.TESSERACT_CONFIG_TITLE,
-    ocr_confidence_threshold=loader.OCR_CONFIDENCE_THRESHOLD,
 
     # Output
     save_crops=args.save_crops or loader.SAVE_CROPS_ENABLED,

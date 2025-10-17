@@ -20,9 +20,6 @@ def parse_flags():
     parser.add_argument("--phash-threshold", type=int, default=None, help="Max Hamming distance for phash match")
     parser.add_argument("--match-attempts", type=int, default=None, help="Number of match retries")
 
-    # OCR
-    parser.add_argument("--tesseract-config", type=str, default=None, help="Tesseract config string (e.g., --psm 7)")
-
     # Output
     parser.add_argument("--debug-dir", type=str, default=None, help="Directory to save debug crops")
     parser.add_argument("--save-crops", action="store_true", help="Enable saving cropped card images")

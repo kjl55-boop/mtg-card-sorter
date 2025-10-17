@@ -27,13 +27,6 @@ PHASH_THRESHOLD = 8  # ✅ could be a runtime flag
 PHASH_HAMMING_THRESHOLD = 6
 MATCH_ATTEMPTS = 3
 MATCH_TOP_K = 12
-ORB_FEATURES = 1200
-
-# ─────────────────────────────────────────────────────────────
-# OCR Settings
-# ─────────────────────────────────────────────────────────────
-TESSERACT_CONFIG_TITLE = "--psm 7"  # ✅ could be a runtime flag
-OCR_CONFIDENCE_THRESHOLD = 0.5
 
 # ─────────────────────────────────────────────────────────────
 # Cropping Defaults
