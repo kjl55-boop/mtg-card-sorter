@@ -234,7 +234,7 @@ def run(debug_dir: str = None):
                 orientation = crop.detect_orientation(card)
                 if orientation == "upside_down":
                     log.info("Auto-flipping card (detected upside down)")
-                    card = cv2.flip(card, 0)
+                    card = cv2.rotate(card, cv2.ROTATE_180)
 
                 if card is None or card.size == 0:
                     log.warning("Crop failed")
