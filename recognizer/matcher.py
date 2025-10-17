@@ -44,10 +44,12 @@ class MatchResult:
     success: bool
     id: Optional[str] = None
     dist: Optional[int] = None
+    phash: Optional[str] = None  # Add this
     meta: Dict[str, Any] = field(default_factory=dict)
     debug_files: Dict[str, str] = field(default_factory=dict)
     attempts: int = 0
     elapsed: float = 0.0
+
 
 class Matcher:
     def __init__(
@@ -83,8 +85,14 @@ class Matcher:
         cfg = self.config
         gray = self.preprocess_fn(card_bgr, out_size=256, clahe=True, blur_ksize=(3,3), crop_margin_pct=0.02)
         qph = compute_phash_from_gray(gray, phash_size=cfg["phash_size"])
+        log.debug("Query phash: %s", qph)
+        log.debug("Matching against %d index entries", len(self._index))
+        result.phash = qph
 
         candidates = match_phash(qph, self._index, top_k=cfg["top_k"], threshold=cfg["phash_threshold"])
+        for candidate in candidates:
+            key, rec, dist = candidate
+            log.debug("Candidate %s: dist=%d", key, dist)
         result = MatchResult(success=False, attempts=1, elapsed=0.0)
 
         if not candidates:
