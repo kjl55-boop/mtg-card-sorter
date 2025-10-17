@@ -236,7 +236,7 @@ def run(debug_dir: str = None):
                     continue
                 log.info("Card cropped successfully: shape=%s", card.shape)
 
-                regions = crop.slice_regions(card, ctrl["top_pct"], ctrl["mid_start_pct"], ctrl["mid_end_pct"], ctrl["bot_pct"])
+                regions = crop.slice_regions(card)
                 for label, region in regions:
                     cv2.imshow(f"Region - {label}", cv2.resize(region, (0, 0), fx=0.6, fy=0.6))
 
