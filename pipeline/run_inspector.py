@@ -33,7 +33,10 @@ CONFIG.logs_dir.mkdir(parents=True, exist_ok=True)
 
 # Timestamped log file
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-log_path = CONFIG.logs_dir / f"run_inspector_{timestamp}.log"
+run_log_dir = CONFIG.logs_dir / "run_inspector"
+run_log_dir.mkdir(parents=True, exist_ok=True)
+log_path = run_log_dir / f"run_inspector_{timestamp}.log"
+
 
 # Configure logging to both console and file
 logging.basicConfig(
