@@ -231,6 +231,11 @@ def run(debug_dir: str = None):
             elif key == ord("c") and box is not None:
                 log.info("Capture triggered")
                 card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
+                orientation = crop.detect_orientation(card)
+                if orientation == "upside_down":
+                    log.info("Auto-flipping card (detected upside down)")
+                    card = cv2.flip(card, 0)
+
                 if card is None or card.size == 0:
                     log.warning("Crop failed")
                     continue

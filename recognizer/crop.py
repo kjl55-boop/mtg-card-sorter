@@ -127,3 +127,16 @@ def slice_regions(card_img: np.ndarray) -> List[Tuple[str, np.ndarray]]:
         return []
     slicer = CardSlicer()
     return [(name, crop) for name, crop in slicer.crop_all(card_img).items()]
+
+def detect_orientation(card: np.ndarray) -> str:
+    regions = slice_regions(card)
+    title = next((r for l, r in regions if l == "title"), None)
+    text = next((r for l, r in regions if l == "text"), None)
+
+    if title is None or text is None:
+        return "unknown"
+
+    title_density = cv2.countNonZero(cv2.cvtColor(title, cv2.COLOR_BGR2GRAY))
+    text_density = cv2.countNonZero(cv2.cvtColor(text, cv2.COLOR_BGR2GRAY))
+
+    return "upside_down" if title_density < text_density else "upright"
