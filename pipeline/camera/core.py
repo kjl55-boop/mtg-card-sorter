@@ -161,7 +161,27 @@ class Camera:
         self._handle = None
         self.backend_name = None
 
+    def autofocus(self):
+        """
+        Trigger autofocus if supported by backend.
+        Only works with picamera2.
+        """
+        if self.backend_name == "picamera2" and self._handle:
+            try:
+                self._handle.autofocus_cycle()
+                log.info("Autofocus triggered via picamera2")
+            except Exception as exc:
+                utils.log_exception(log, exc, "Autofocus failed")
+        else:
+            log.info("Autofocus not supported for backend: %s", self.backend_name)
+
+
     @property
     def backend(self) -> Optional[str]:
         return self.backend_name
+    
+    @property
+    def supports_autofocus(self) -> bool:
+        return self.backend_name == "picamera2"
+
 
