@@ -17,6 +17,8 @@ from pathlib import Path
 from collections import Counter
 
 from config.config import CONFIG
+from datetime import datetime
+import logging
 from pipeline import utils
 from pipeline.camera import api as capture
 from recognizer import crop
@@ -26,8 +28,26 @@ from recognizer.phash import Matcher
 # Logging and Defaults
 # ─────────────────────────────────────────────────────────────
 
-utils.configure_logging(level=CONFIG.log_level)
-log = utils.get_logger("run_inspector")
+# Ensure logs directory exists
+CONFIG.logs_dir.mkdir(parents=True, exist_ok=True)
+
+# Timestamped log file
+timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+log_path = CONFIG.logs_dir / f"run_inspector_{timestamp}.log"
+
+# Configure logging to both console and file
+logging.basicConfig(
+    level=CONFIG.log_level,
+    format=CONFIG.log_format,
+    handlers=[
+        logging.StreamHandler(),  # Console
+        logging.FileHandler(log_path, mode="w")  # File
+    ]
+)
+
+log = logging.getLogger("card_inspector.run_inspector")
+log.info("Logging initialized at %s", log_path)
+
 
 DEFAULTS = {
     "pad_x_pct": CONFIG.pad_x_pct,
