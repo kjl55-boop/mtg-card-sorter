@@ -5,6 +5,10 @@ from tools.phash_indexer import build_phash_index
 from PIL import Image
 from io import BytesIO
 import imagehash
+from recognizer.card_slicer import CardSlicer
+import cv2
+import numpy as np
+
 
 class ScryfallDBBuilder:
     def __init__(self, set_code="m20", root_dir=Path(__file__).resolve().parents[1]):
@@ -58,14 +62,28 @@ class ScryfallDBBuilder:
             try:
                 response = requests.get(img_url, timeout=10)
                 image = Image.open(BytesIO(response.content)).convert("RGB")
-                phash = str(imagehash.phash(image, hash_size=8))
+                full_phash = str(imagehash.phash(image, hash_size=16))
+
+                # Convert to OpenCV format
+                cv_img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+                # Slice regions
+                slicer = CardSlicer()
+                region_hashes = {}
+                for name, crop in slicer.crop_all(cv_img).items():
+                    pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+                    region_hashes[name] = str(imagehash.phash(pil_crop, hash_size=16))
+
                 return {
                     "id": card_id,
                     "name": card.get("name"),
                     "set_code": card.get("set"),
                     "collector_number": card.get("collector_number"),
                     "image_url": img_url,
-                    "phash": phash,
+                    "phash": full_phash,
+                    "phash_title": region_hashes.get("title"),
+                    "phash_mana": region_hashes.get("mana"),
+                    "phash_text": region_hashes.get("text"),
                     "colors": ",".join(card.get("colors", [])),
                     "type_line": card.get("type_line"),
                     "mana_cost": card.get("mana_cost"),
@@ -75,6 +93,7 @@ class ScryfallDBBuilder:
             except Exception as e:
                 self.logger.warning("Failed to process image for %s: %s", card_id, e)
         return None
+
 
     def build_db(self, cards):
         conn = sqlite3.connect(self.db_path)
@@ -87,6 +106,9 @@ class ScryfallDBBuilder:
                 collector_number TEXT,
                 image_url TEXT,
                 phash TEXT,
+                phash_title TEXT,
+                phash_mana TEXT,
+                phash_text TEXT,
                 colors TEXT,
                 type_line TEXT,
                 mana_cost TEXT,
@@ -121,6 +143,9 @@ class ScryfallDBBuilder:
                             result["collector_number"],
                             result["image_url"],
                             result["phash"],
+                            result["phash_title"],
+                            result["phash_mana"],
+                            result["phash_text"],
                             result["colors"],
                             result["type_line"],
                             result["mana_cost"],
@@ -130,7 +155,7 @@ class ScryfallDBBuilder:
                 except Exception as e:
                     self.logger.warning("Error during card processing: %s", e)
 
-        cur.executemany("INSERT OR REPLACE INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+        cur.executemany("INSERT OR REPLACE INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
         conn.commit()
         conn.close()
         self.logger.info("Inserted %d new cards into database", len(rows))
