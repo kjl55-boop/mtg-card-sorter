@@ -231,8 +231,6 @@ def run(debug_dir: str = None):
             elif key == ord("c") and box is not None:
                 log.info("Capture triggered")
                 card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
-                mana_crop = crop.crop_mana_cost(card)
-                cv2.imshow("Mana Cost", cv2.resize(mana_crop, (0, 0), fx=2.0, fy=2.0))
                 if card is None or card.size == 0:
                     log.warning("Crop failed")
                     continue
