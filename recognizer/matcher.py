@@ -65,6 +65,9 @@ class Matcher:
         self._last_debug_id = None
 
         log.info("Matcher initialized with phash_size=%s top_k=%s", self.config["phash_size"], self.config["top_k"])
+        if not CONFIG.game_profile.index_path.exists():
+            log.warning("Phash index path does not exist: %s", CONFIG.game_profile.index_path)
+
 
     def reload_index(self, path: Optional[Path] = None):
         path = Path(path) if path else CONFIG.game_profile.index_path

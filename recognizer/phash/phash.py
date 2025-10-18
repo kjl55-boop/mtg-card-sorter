@@ -31,14 +31,14 @@ class Matcher:
         self.verify_title = self.config.get("verify_title", False)
         self.index = self.load_index()
 
-    def load_index(self) -> Dict[str, Dict]:
+    def load_index(path: Path) -> Dict[str, Any]:
         try:
-            with open(self.index_path, "rb") as f:
+            with open(path, "rb") as f:
                 index = pickle.load(f)
-            log.info("Loaded phash index with %d entries from %s", len(index), self.index_path)
+            log.info("Loaded phash index with %d entries from %s", len(index), path)
             return index
         except Exception as e:
-            log.warning("Failed to load index from %s: %s", self.index_path, e)
+            log.warning("Failed to load index from %s: %s", path, e)
             return {}
 
     def compute_phash_from_gray(self, gray: np.ndarray) -> str:
