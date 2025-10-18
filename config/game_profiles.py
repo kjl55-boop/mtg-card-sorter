@@ -21,14 +21,17 @@ class CardGameProfile:
 # Game Profiles
 # ─────────────────────────────────────────────────────────────
 
+#CropRegion(name, x_start_pct, x_end_pct, y_start_pct, y_end_pct)
+
 MTG_PROFILE = CardGameProfile(
     name="mtg",
     db_path=Path("data/scryfall_db/cards.db"),
     index_path=Path("data/scryfall_db/descriptors/phash_index.pkl"),
     crop_regions={
-        "title": (0.05, 0.15),
-        "mana": (0.15, 0.25),
-        "text": (0.25, 0.85)
+        "title": (0.05, 0.95, 0.02, 0.12),
+        "mana": (0.75, 0.98, 0.02, 0.12),
+        "text": (0.05, 0.95, 0.55, 0.75),
+        "bottom": (0.05, 0.95, 0.78, 0.98)
     },
     preprocess_config={
         "clahe": True,
