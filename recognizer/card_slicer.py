@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import cv2
 import numpy as np
-from typing import Dict
+from typing import Dict, Optional, Tuple
 
 @dataclass
 class CropRegion:
@@ -13,14 +13,22 @@ class CropRegion:
     y_start_pct: float
     y_end_pct: float
 
+
+DEFAULT_REGIONS = {
+    "title": (0.05, 0.95, 0.02, 0.12),
+    "mana": (0.75, 0.98, 0.02, 0.12),
+    "text": (0.05, 0.95, 0.55, 0.75),
+    "bottom": (0.05, 0.95, 0.78, 0.98)
+}
+
 class CardSlicer:
-    def __init__(self):
-        self.regions: Dict[str, CropRegion] = {
-            "title": CropRegion("title", 0.05, 0.95, 0.02, 0.12),
-            "mana": CropRegion("mana", 0.75, 0.98, 0.02, 0.12),
-            "text": CropRegion("text", 0.05, 0.95, 0.55, 0.75),
-            "bottom": CropRegion("bottom", 0.05, 0.95, 0.78, 0.98)
+    def __init__(self, region_defs: Optional[Dict[str, Tuple[float, float, float, float]]] = None):
+        region_defs = region_defs or DEFAULT_REGIONS
+        self.regions = {
+            name: CropRegion(name, *bounds)
+            for name, bounds in region_defs.items()
         }
+
 
     def crop(self, card_img: np.ndarray, region_name: str) -> np.ndarray:
         if card_img is None or region_name not in self.regions:

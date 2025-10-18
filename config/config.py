@@ -5,6 +5,7 @@ Use CONFIG to access resolved values across the pipeline.
 
 from types import SimpleNamespace
 from . import paths, loader, flags
+from config.game_profiles import MTG_PROFILE, POKEMON_PROFILE
 
 args = flags.parse_flags()
 
@@ -45,4 +46,7 @@ CONFIG = SimpleNamespace(
 
     # Normalization
     normalized_size=loader.NORMALIZED_SIZE,
+
+    #Card Profile
+    game_profile=MTG_PROFILE 
 )
