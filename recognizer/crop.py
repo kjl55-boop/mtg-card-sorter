@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 from pipeline import utils
 from recognizer.card_slicer import CardSlicer
+from config.config import CONFIG
 
 log = utils.get_logger("crop")
 
@@ -125,7 +126,7 @@ def slice_regions(card_img: np.ndarray) -> List[Tuple[str, np.ndarray]]:
     """
     if card_img is None:
         return []
-    slicer = CardSlicer()
+    slicer = CardSlicer(region_defs=CONFIG.game_profile.crop_regions)
     return [(name, crop) for name, crop in slicer.crop_all(card_img).items()]
 
 def detect_orientation(card: np.ndarray) -> str:

@@ -60,14 +60,14 @@ class Matcher:
         config: Optional[Dict[str, Any]] = None,
     ):
         self.config = {**DEFAULTS, **(config or {})}
-        self._index = phash_index or load_index(Path(profile.index_path) / "phash_index.pkl")
+        self._index = phash_index or load_index(CONFIG.game_profile.index_path)
         self.preprocess_fn = preprocess_fn or (lambda img, **kw: preprocess_for_phash(img, **kw))
         self._last_debug_id = None
 
         log.info("Matcher initialized with phash_size=%s top_k=%s", self.config["phash_size"], self.config["top_k"])
 
     def reload_index(self, path: Optional[Path] = None):
-        path = Path(path) if path else Path(profile.index_path) / "phash_index.pkl"
+        path = Path(path) if path else CONFIG.game_profile.index_path
         self._index = load_index(path)
 
     def _save_debug(self, img: np.ndarray, tag: str) -> str:

@@ -31,6 +31,9 @@ from recognizer.phash import Matcher
 # Ensure logs directory exists
 CONFIG.logs_dir.mkdir(parents=True, exist_ok=True)
 
+#Pull from game Profile 
+profile = CONFIG.game_profile
+
 # Timestamped log file
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 run_log_dir = CONFIG.logs_dir / "run_inspector"
@@ -50,6 +53,8 @@ logging.basicConfig(
 
 log = logging.getLogger("card_inspector.run_inspector")
 log.info("Logging initialized at %s", log_path)
+log.info("Using game profile: %s", CONFIG.game_profile.name)
+log.info("Phash index path: %s", CONFIG.game_profile.index_path)
 
 
 DEFAULTS = {
