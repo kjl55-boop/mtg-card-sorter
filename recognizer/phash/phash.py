@@ -11,9 +11,9 @@ from imagehash import hex_to_hash
 from pipeline import utils
 from recognizer.card_slicer import CardSlicer
 from recognizer.phash.phash_tools import PhashComparator
+from config.config import CONFIG
 
 log = utils.get_logger("phash")
-INDEX_PATH = Path("data/descriptors/phash_index.pkl")
 
 DEFAULT_PHASH_SIZE = 8
 DEFAULT_TOP_K = 5
@@ -21,9 +21,9 @@ DEFAULT_THRESHOLD = 10
 
 class Matcher:
     def __init__(self,
-                 index_path: Path = INDEX_PATH,
+                 index_path: Optional[Path] = None,
                  config: Optional[Dict[str, Any]] = None):
-        self.index_path = index_path
+        self.index_path = index_path or CONFIG.game_profile.index_path
         self.config = config or {}
         self.phash_size = self.config.get("phash_size", DEFAULT_PHASH_SIZE)
         self.top_k = self.config.get("top_k", DEFAULT_TOP_K)
