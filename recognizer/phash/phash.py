@@ -1,4 +1,4 @@
-# recognizer/phash/phash.py
+# recognizer/phash/phash.py blah
 
 import cv2
 import numpy as np
