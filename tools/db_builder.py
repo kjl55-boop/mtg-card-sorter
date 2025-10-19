@@ -8,6 +8,7 @@ import imagehash
 from recognizer.card_slicer import CardSlicer
 import cv2
 import numpy as np
+from config.config import CONFIG
 
 
 class ScryfallDBBuilder:
@@ -72,7 +73,7 @@ class ScryfallDBBuilder:
                 region_hashes = {}
                 for name, crop in slicer.crop_all(cv_img).items():
                     pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-                    region_hashes[name] = str(imagehash.phash(pil_crop, hash_size=16))
+                    region_hashes[name] = str(imagehash.phash(pil_crop, hash_size=CONFIG.phash_threshold))
 
                 return {
                     "id": card_id,

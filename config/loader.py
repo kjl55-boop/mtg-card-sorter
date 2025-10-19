@@ -23,7 +23,7 @@ DISPLAY_SCALE = 0.5  # ✅ could be a runtime flag
 # ─────────────────────────────────────────────────────────────
 # Matching / Hashing
 # ─────────────────────────────────────────────────────────────
-PHASH_THRESHOLD = 8  # ✅ could be a runtime flag
+PHASH_THRESHOLD = 16  # ✅ could be a runtime flag
 PHASH_HAMMING_THRESHOLD = 6
 MATCH_ATTEMPTS = 3
 MATCH_TOP_K = 12
