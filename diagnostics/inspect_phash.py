@@ -40,7 +40,7 @@ log.info("Phash index path: %s", CONFIG.game_profile.index_path)
 # Matcher Setup
 # ─────────────────────────────────────────────────────────────
 
-matcher = Matcher(config=CONFIG.as_dict())
+matcher = Matcher(config=vars(CONFIG))
 log.info("Matcher config → phash_size=%d, top_k=%d, threshold=%d, verify_title=%s",
          matcher.phash_size, matcher.top_k, matcher.threshold, matcher.verify_title)
 
