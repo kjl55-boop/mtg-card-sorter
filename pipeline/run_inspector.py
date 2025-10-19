@@ -160,7 +160,7 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
     log.info("No consensus match found")
     return None
 
-def match_with_shudder_capture(camera, matcher, box, attempts=3, dist_threshold=None):
+def match_with_shudder_capture(camera, matcher, box, attempts=CONFIG.match_attempts, dist_threshold=None):
     results = []
     dist_threshold = dist_threshold or matcher.config["phash_threshold"]
 
@@ -171,12 +171,25 @@ def match_with_shudder_capture(camera, matcher, box, attempts=3, dist_threshold=
         card = crop.crop_card_from_box(frame, box, pad_x_pct=0.0, pad_y_pct=0.0)
 
         result = matcher.match_with_policy(card)
-        if result and result.success and result.dist is not None and result.dist <= dist_threshold:
+        if result and result.success and result.dist is not None:
             card_name = result.meta.get("name", "unknown")
             log.info("Shudder attempt %d: success=%s id=%s name=%s dist=%s", i + 1, result.success, result.id, card_name, result.dist)
             results.append((result.id, result.dist, card_name))
         else:
             log.info("Shudder attempt %d: no valid match", i + 1)
+
+    filtered = [r for r in results if r[1] <= dist_threshold]
+    if not filtered:
+        log.info("No matches within threshold")
+        return None
+
+    if results:
+        best = min(results, key=lambda r: r[1])
+        log.info("Best candidate across shudder: %s (dist=%d)", best[0], best[1])
+
+    if result and not result.success and matcher.config.get("save_debug_on_failure", True):
+        dbg_path = matcher._save_debug(card, f"shudder_attempt_{i+1}")
+        log.info("Saved debug crop for attempt %d: %s", i + 1, dbg_path)
 
     if not results:
         log.info("No valid matches across shudder attempts")
@@ -204,7 +217,13 @@ def run(debug_dir: str = None):
     if CONFIG.autofocus_enabled:
         cam.autofocus()
 
-    matcher = Matcher(config={"phash_threshold": CONFIG.phash_threshold})
+    matcher = Matcher(config={
+            "phash_size": CONFIG.phash_size,
+            "phash_threshold": CONFIG.phash_threshold,
+            "top_k": CONFIG.match_top_k,
+            "attempts_per_card": CONFIG.match_attempts,
+        })
+
     controls_visible = False
 
     try:
