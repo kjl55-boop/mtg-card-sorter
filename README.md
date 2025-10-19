@@ -1,3 +1,6 @@
+# look into https://github.com/pyenv/pyenv
+
+
 # MTG Card Sorter
 
 A modular Magic: The Gathering card sorting system using Raspberry Pi 5, Pi Camera Module 3, and Raspberry Pi Pico slave boards.
