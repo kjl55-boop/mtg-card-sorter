@@ -67,13 +67,13 @@ class Matcher:
                 continue
 
             dist = query_hash - db_hash
-            log.debug("Query shape: %s, DB shape: %s, dist: %d", query_hash.hash.shape, db_hash.hash.shape, dist)
+            #log.debug("Query shape: %s, DB shape: %s, dist: %d", query_hash.hash.shape, db_hash.hash.shape, dist)
+            log.debug("Candidate %s: dist=%d", card_id, dist)
 
             if dist <= self.threshold:
                 candidates.append((card_id, rec, dist))
 
         candidates.sort(key=lambda x: x[2])
-        log.debug("Candidate %s: dist=%d", card_id, dist)
         return candidates[:self.top_k]
 
     def match_with_policy(self,
