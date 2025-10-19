@@ -24,7 +24,7 @@ DISPLAY_SCALE = 0.5  # ✅ could be a runtime flag
 # Matching / Hashing
 # ─────────────────────────────────────────────────────────────
 PHASH_SIZE = 16
-PHASH_THRESHOLD = 16
+PHASH_THRESHOLD = 64
 PHASH_TOP_K = 12
 PHASH_OUT_SIZE = 256
 PHASH_CLAHE = True
