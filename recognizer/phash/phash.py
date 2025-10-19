@@ -73,6 +73,7 @@ class Matcher:
                 candidates.append((card_id, rec, dist))
 
         candidates.sort(key=lambda x: x[2])
+        log.debug("Candidate %s: dist=%d", card_id, dist)
         return candidates[:self.top_k]
 
     def match_with_policy(self,
