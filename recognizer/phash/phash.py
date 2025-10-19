@@ -90,6 +90,7 @@ class Matcher:
             return None
 
         best_key, best_rec, best_dist = candidates[0]
+        log.info("Best candidate: %s (dist=%d)", best_key, best_dist)
         title_dist = None
 
         if self.verify_title:
