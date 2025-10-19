@@ -15,19 +15,20 @@ import time
 import cv2
 from pathlib import Path
 from collections import Counter
+from datetime import datetime
 
 from config.config import CONFIG
 from pipeline import utils
 from pipeline.camera import api as capture
 from recognizer import crop
-from recognizer.phash import Matcher
+from recognizer.phash.phash import Matcher
 
 # ─────────────────────────────────────────────────────────────
 # Logging and Defaults
 # ─────────────────────────────────────────────────────────────
 
 utils.configure_logging(level=CONFIG.log_level)
-log = utils.get_logger("run_inspector")
+log = utils.get_logger("live_inspector")
 
 DEFAULTS = {
     "pad_x_pct": CONFIG.pad_x_pct,
@@ -98,7 +99,7 @@ def read_controls():
     }
 
 # ─────────────────────────────────────────────────────────────
-# Matching Logic
+# Matching helpers (dict-style results)
 # ─────────────────────────────────────────────────────────────
 
 def overlay_text(img, text, org=(10, 30), color=(0, 255, 0)):
@@ -109,10 +110,13 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
     for i in range(attempts):
         result = matcher.match_with_policy(card_image)
         if result:
-            card_name = result.meta.get("name", "unknown")
-            log.info("Attempt %d: success=%s id=%s name=%s dist=%s", i + 1, result.success, result.id, card_name, result.dist)
-            if result.success and result.dist is not None and result.dist <= dist_threshold:
-                results.append((result.id, result.dist, card_name))
+            card_id = result.get("id")
+            card_name = result.get("meta", {}).get("name", "unknown")
+            dist = result.get("dist")
+            accepted = bool(result.get("accepted", dist is not None and dist <= dist_threshold))
+            log.info("Attempt %d: id=%s name=%s dist=%s accepted=%s", i + 1, card_id, card_name, dist, accepted)
+            if accepted:
+                results.append((card_id, dist, card_name))
         else:
             log.info("Attempt %d: result=None", i + 1)
 
@@ -134,21 +138,27 @@ def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8
 
 def match_with_shudder_capture(camera, matcher, box, attempts=3, dist_threshold=None):
     results = []
-    dist_threshold = dist_threshold or matcher.config["phash_threshold"]
+    dist_threshold = dist_threshold or matcher.threshold
 
     for i in range(attempts):
         frame = camera.read(timeout=1.0)
         if frame is None:
             continue
         card = crop.crop_card_from_box(frame, box, pad_x_pct=0.0, pad_y_pct=0.0)
+        if card is None or card.size == 0:
+            continue
 
         result = matcher.match_with_policy(card)
-        if result and result.success and result.dist is not None and result.dist <= dist_threshold:
-            card_name = result.meta.get("name", "unknown")
-            log.info("Shudder attempt %d: success=%s id=%s name=%s dist=%s", i + 1, result.success, result.id, card_name, result.dist)
-            results.append((result.id, result.dist, card_name))
+        if result:
+            card_id = result.get("id")
+            card_name = result.get("meta", {}).get("name", "unknown")
+            dist = result.get("dist")
+            accepted = bool(result.get("accepted", dist is not None and dist <= dist_threshold))
+            log.info("Shudder attempt %d: id=%s name=%s dist=%s accepted=%s", i + 1, card_id, card_name, dist, accepted)
+            if accepted:
+                results.append((card_id, dist, card_name))
         else:
-            log.info("Shudder attempt %d: no valid match", i + 1)
+            log.info("Shudder attempt %d: no candidate", i + 1)
 
     if not results:
         log.info("No valid matches across shudder attempts")
@@ -163,6 +173,7 @@ def match_with_shudder_capture(camera, matcher, box, attempts=3, dist_threshold=
 
     log.info("No consensus match found across shudder attempts")
     return None
+
 # ─────────────────────────────────────────────────────────────
 # Main Loop
 # ─────────────────────────────────────────────────────────────
@@ -170,11 +181,14 @@ def match_with_shudder_capture(camera, matcher, box, attempts=3, dist_threshold=
 def run(debug_dir: str = None):
     debug_dir = debug_dir or CONFIG.debug_dir
     utils.ensure_dir(debug_dir)
-    log.info("Starting run_inspector; debug_dir=%s", debug_dir)
+    log.info("Starting live_inspector; debug_dir=%s", debug_dir)
 
     cam = capture.init_camera(preview_size=CONFIG.preview_size)
     if CONFIG.autofocus_enabled:
-        cam.autofocus()
+        try:
+            cam.autofocus()
+        except Exception:
+            log.debug("autofocus not supported", exc_info=True)
 
     matcher = Matcher(config={"phash_threshold": CONFIG.phash_threshold})
     controls_visible = False
@@ -217,7 +231,10 @@ def run(debug_dir: str = None):
                 break
 
             elif key == ord("f"):
-                cam.autofocus()
+                try:
+                    cam.autofocus()
+                except Exception:
+                    log.debug("autofocus not supported", exc_info=True)
 
             elif key == ord("h"):
                 print("\nControls:")
@@ -231,17 +248,16 @@ def run(debug_dir: str = None):
             elif key == ord("c") and box is not None:
                 log.info("Capture triggered")
                 card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
-                mana_crop = crop.crop_mana_cost(card)
-                cv2.imshow("Mana Cost", cv2.resize(mana_crop, (0, 0), fx=2.0, fy=2.0))
                 if card is None or card.size == 0:
                     log.warning("Crop failed")
                     continue
-                log.info("Card cropped successfully: shape=%s", card.shape)
 
+                log.info("Card cropped successfully: shape=%s", card.shape)
                 snippets = crop.extract_snippets(card, ctrl["top_pct"], ctrl["mid_start_pct"], ctrl["mid_end_pct"], ctrl["bot_pct"])
                 cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
                 for label, snip in snippets:
-                    cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
+                    if snip is not None:
+                        cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
 
                 match = match_with_shudder_capture(cam, matcher, box, attempts=CONFIG.match_attempts, dist_threshold=CONFIG.phash_threshold)
                 if match:
