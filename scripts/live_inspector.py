@@ -1,213 +1,280 @@
 #!/usr/bin/env python3
 """
-Run a phash inspection over images in data/debug using the canonical Matcher.
-Saves logs in CONFIG.logs_dir/diagnostics and visual comparisons to debug_images.
+Live inspector with toggleable controls window.
+
+Keys:
+  c  - capture preview (crop, snippets, try match via Matcher)
+  s  - save current crop to debug dir
+  m  - toggle controls window (open/close)
+  q  - quit
+  f  - trigger autofocus
+  h  - show help menu
 """
 
-import logging
-from datetime import datetime
-from pathlib import Path
+import time
 import cv2
-import numpy as np
+from pathlib import Path
+from collections import Counter
 
 from config.config import CONFIG
 from pipeline import utils
-from recognizer.phash.phash import Matcher
-from recognizer.preprocess import preprocess_for_phash
+from pipeline.camera import api as capture
+from recognizer import crop
+from recognizer.phash import Matcher
 
-# Logging setup
-LOG_DIR = Path(CONFIG.logs_dir) / "diagnostics"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-log_path = LOG_DIR / f"run_inspector_{timestamp}.log"
+# ─────────────────────────────────────────────────────────────
+# Logging and Defaults
+# ─────────────────────────────────────────────────────────────
 
-logging.basicConfig(
-    level=getattr(logging, CONFIG.log_level, logging.INFO),
-    format=CONFIG.log_format,
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(str(log_path), mode="w")
-    ]
-)
-log = logging.getLogger("diagnostics.run_inspector")
-log.info("Logging initialized at %s", log_path)
-log.info("Using game profile: %s", CONFIG.game_profile.name)
-log.info("Phash index path: %s", CONFIG.game_profile.index_path)
+utils.configure_logging(level=CONFIG.log_level)
+log = utils.get_logger("run_inspector")
 
-# Build preprocess kwargs from game profile + CONFIG defaults
-gp = getattr(CONFIG, "game_profile", None)
-gp_pp = gp.preprocess_config if gp and hasattr(gp, "preprocess_config") else {}
-pp_kwargs = {
-    "out_size": int(getattr(CONFIG, "phash_out_size", 256)),
-    "clahe": bool(getattr(CONFIG, "phash_clahe", True)),
-    "blur_ksize": tuple(getattr(CONFIG, "phash_blur_ksize", (3, 3))),
-    "crop_margin_pct": float(getattr(CONFIG, "phash_crop_margin_pct", 0.02)),
-    "highpass": bool(getattr(CONFIG, "phash_highpass", False)),
-    "debug": False
+DEFAULTS = {
+    "pad_x_pct": CONFIG.pad_x_pct,
+    "pad_y_pct": CONFIG.pad_y_pct,
+    "min_area": CONFIG.min_area,
+    "top_pct": CONFIG.top_pct,
+    "mid_start_pct": CONFIG.mid_start_pct,
+    "mid_end_pct": CONFIG.mid_end_pct,
+    "bot_pct": CONFIG.bottom_pct,
+    "display_scale_pct": CONFIG.display_scale
 }
-# override with game-profile values if present
-pp_kwargs.update(gp_pp)
 
-# Create matchers
-base_cfg = vars(CONFIG)
-matcher = Matcher(config=base_cfg)
-# tmp matcher for relaxed acceptance during inspection
-tmp_cfg = base_cfg.copy()
-tmp_cfg["phash_threshold"] = max(64, tmp_cfg.get("phash_threshold", 64))
-tmp_matcher = Matcher(config=tmp_cfg)
+CONTROLS_WIN = "Controls"
 
-log.info("Matcher config -> phash_size=%d, top_k=%d, threshold=%d, verify_title=%s",
-         matcher.phash_size, matcher.top_k, matcher.threshold, matcher.verify_title)
-log.info("Temporary matcher threshold=%d", tmp_matcher.threshold)
+# ─────────────────────────────────────────────────────────────
+# UI Controls
+# ─────────────────────────────────────────────────────────────
 
-# Helpers
-DEBUG_IMG_DIR = LOG_DIR / "debug_images"
-DEBUG_IMG_DIR.mkdir(parents=True, exist_ok=True)
+def create_controls():
+    cv2.namedWindow(CONTROLS_WIN, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(CONTROLS_WIN, 700, 240)
+    for name, default, max_val in [
+        ("Pad X %", int(DEFAULTS["pad_x_pct"] * 100), 50),
+        ("Pad Y %", int(DEFAULTS["pad_y_pct"] * 100), 50),
+        ("Min Area", DEFAULTS["min_area"], 50000),
+        ("Top %", int(DEFAULTS["top_pct"] * 100), 40),
+        ("Mid Start %", int(DEFAULTS["mid_start_pct"] * 100), 70),
+        ("Mid End %", int(DEFAULTS["mid_end_pct"] * 100), 90),
+        ("Bot %", int(DEFAULTS["bot_pct"] * 100), 95),
+        ("Display %", int(DEFAULTS["display_scale_pct"] * 100), 200),
+    ]:
+        cv2.createTrackbar(name, CONTROLS_WIN, default, max_val, lambda x: None)
 
-def save_side_by_side(query_img: np.ndarray, candidate_path: Path, out_path: Path):
-    cand = cv2.imread(str(candidate_path))
-    if cand is None:
+def destroy_controls():
+    try:
+        cv2.destroyWindow(CONTROLS_WIN)
+    except Exception:
+        pass
+
+def controls_open():
+    try:
+        return cv2.getWindowProperty(CONTROLS_WIN, 0) >= 0
+    except Exception:
+        return False
+
+def read_controls():
+    def safe_pct(name, default):
+        try:
+            return cv2.getTrackbarPos(name, CONTROLS_WIN) / 100.0
+        except Exception:
+            return default
+
+    def safe_val(name, default):
+        try:
+            return cv2.getTrackbarPos(name, CONTROLS_WIN)
+        except Exception:
+            return default
+
+    return {
+        "pad_x_pct": safe_pct("Pad X %", DEFAULTS["pad_x_pct"]),
+        "pad_y_pct": safe_pct("Pad Y %", DEFAULTS["pad_y_pct"]),
+        "min_area": max(100, safe_val("Min Area", DEFAULTS["min_area"])),
+        "top_pct": safe_pct("Top %", DEFAULTS["top_pct"]),
+        "mid_start_pct": safe_pct("Mid Start %", DEFAULTS["mid_start_pct"]),
+        "mid_end_pct": safe_pct("Mid End %", DEFAULTS["mid_end_pct"]),
+        "bot_pct": safe_pct("Bot %", DEFAULTS["bot_pct"]),
+        "display_scale_pct": max(0.1, safe_pct("Display %", DEFAULTS["display_scale_pct"]))
+    }
+
+# ─────────────────────────────────────────────────────────────
+# Matching Logic
+# ─────────────────────────────────────────────────────────────
+
+def overlay_text(img, text, org=(10, 30), color=(0, 255, 0)):
+    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+def confirm_match_with_retries(card_image, matcher, attempts=3, dist_threshold=8):
+    results = []
+    for i in range(attempts):
+        result = matcher.match_with_policy(card_image)
+        if result:
+            card_name = result.meta.get("name", "unknown")
+            log.info("Attempt %d: success=%s id=%s name=%s dist=%s", i + 1, result.success, result.id, card_name, result.dist)
+            if result.success and result.dist is not None and result.dist <= dist_threshold:
+                results.append((result.id, result.dist, card_name))
+        else:
+            log.info("Attempt %d: result=None", i + 1)
+
+    if not results:
+        log.info("No valid phash matches across attempts")
         return None
-    h = cand.shape[0]
-    q_h, q_w = query_img.shape[:2]
-    new_w = max(1, int(q_w * (h / q_h)))
-    q_resized = cv2.resize(query_img, (new_w, h))
-    # pad widths to match
-    if q_resized.shape[1] < cand.shape[1]:
-        pad = cand.shape[1] - q_resized.shape[1]
-        q_resized = cv2.copyMakeBorder(q_resized, 0, 0, 0, pad, cv2.BORDER_CONSTANT, value=[0,0,0])
-    elif q_resized.shape[1] > cand.shape[1]:
-        cand = cv2.copyMakeBorder(cand, 0, 0, 0, q_resized.shape[1] - cand.shape[1], cv2.BORDER_CONSTANT, value=[0,0,0])
-    side = np.hstack([q_resized, cand])
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(out_path), side)
-    return out_path
 
-def save_debug_img(img: np.ndarray, tag: str, src_name: str) -> Path:
-    filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{src_name}_{tag}.png"
-    out_path = DEBUG_IMG_DIR / filename
-    cv2.imwrite(str(out_path), img)
-    return out_path
+    counts = Counter([r[0] for r in results])
+    most_common_id, freq = counts.most_common(1)[0]
+    log.info("Most common ID: %s (freq=%d)", most_common_id, freq)
 
-# Collect image files
-debug_dir = Path("data/debug")
-image_files = sorted(debug_dir.glob("*.png")) + sorted(debug_dir.glob("*.jpg")) + sorted(debug_dir.glob("*.jpeg"))
+    if freq >= 2:
+        for r in results:
+            if r[0] == most_common_id:
+                return r  # (id, dist, name)
 
-if not image_files:
-    log.warning("No debug images found in %s", debug_dir)
-    raise SystemExit(1)
+    log.info("No consensus match found")
+    return None
 
-stats = {
-    "total": 0,
-    "matched": 0,
-    "accepted": 0,
-    "dists": []
-}
+def match_with_shudder_capture(camera, matcher, box, attempts=3, dist_threshold=None):
+    results = []
+    dist_threshold = dist_threshold or matcher.config["phash_threshold"]
 
-for img_path in image_files:
-    stats["total"] += 1
-    log.info("Testing image: %s", img_path.name)
-    img = cv2.imread(str(img_path))
-    if img is None:
-        log.warning("Failed to load image: %s", img_path.name)
-        continue
+    for i in range(attempts):
+        frame = camera.read(timeout=1.0)
+        if frame is None:
+            continue
+        card = crop.crop_card_from_box(frame, box, pad_x_pct=0.0, pad_y_pct=0.0)
 
-    # Compute query phash explicitly for logging parity-check
+        result = matcher.match_with_policy(card)
+        if result and result.success and result.dist is not None and result.dist <= dist_threshold:
+            card_name = result.meta.get("name", "unknown")
+            log.info("Shudder attempt %d: success=%s id=%s name=%s dist=%s", i + 1, result.success, result.id, card_name, result.dist)
+            results.append((result.id, result.dist, card_name))
+        else:
+            log.info("Shudder attempt %d: no valid match", i + 1)
+
+    if not results:
+        log.info("No valid matches across shudder attempts")
+        return None
+
+    counts = Counter([r[0] for r in results])
+    most_common_id, freq = counts.most_common(1)[0]
+    if freq >= 2:
+        for r in results:
+            if r[0] == most_common_id:
+                return r  # (id, dist, name)
+
+    log.info("No consensus match found across shudder attempts")
+    return None
+# ─────────────────────────────────────────────────────────────
+# Main Loop
+# ─────────────────────────────────────────────────────────────
+
+def run(debug_dir: str = None):
+    debug_dir = debug_dir or CONFIG.debug_dir
+    utils.ensure_dir(debug_dir)
+    log.info("Starting run_inspector; debug_dir=%s", debug_dir)
+
+    cam = capture.init_camera(preview_size=CONFIG.preview_size)
+    if CONFIG.autofocus_enabled:
+        cam.autofocus()
+
+    matcher = Matcher(config={"phash_threshold": CONFIG.phash_threshold})
+    controls_visible = False
+
     try:
-        pre = preprocess_for_phash(img, **pp_kwargs)
-        pre_img = pre.final if hasattr(pre, "final") else pre
-    except Exception as e:
-        log.warning("Preprocessing failed for %s: %s", img_path.name, e)
-        pre_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    try:
-        qph = matcher.compute_phash_from_gray(pre_img)
-        log.info("  Query phash: %s", qph)
-    except Exception as e:
-        log.warning("  Failed to compute query phash: %s", e)
-        continue
-
-    # Distance distribution across index (top 20)
-    from imagehash import hex_to_hash
-    try:
-        qh = hex_to_hash(qph)
-    except Exception as e:
-        log.warning("  Failed to parse query phash: %s", e)
-        qh = None
-
-    dist_list = []
-    if qh is not None:
-        for cid, rec in matcher.index.items():
-            dbp = rec.get("phash")
-            if not dbp:
+        while True:
+            frame = capture.grab_frame(cam, timeout=CONFIG.camera_timeout)
+            if frame is None:
+                log.warning("No frame read from camera; retrying")
+                time.sleep(0.1)
                 continue
-            try:
-                dbh = hex_to_hash(dbp)
-            except Exception:
-                continue
-            if qh.hash.shape != dbh.hash.shape:
-                continue
-            dist_list.append((cid, int(qh - dbh)))
-        dist_list.sort(key=lambda x: x[1])
 
-    if dist_list:
-        top20 = ", ".join(f"{c[:8]}:{d}" for c, d in dist_list[:20])
-        log.info("  Top distances (top 20): %s", top20)
-    else:
-        log.info("  No comparable phash entries (shape mismatch or empty phash)")
+            ctrl = read_controls() if controls_visible and controls_open() else {
+                "pad_x_pct": CONFIG.pad_x_pct,
+                "pad_y_pct": CONFIG.pad_y_pct,
+                "min_area": CONFIG.min_area,
+                "top_pct": CONFIG.top_pct,
+                "mid_start_pct": CONFIG.mid_start_pct,
+                "mid_end_pct": CONFIG.mid_end_pct,
+                "bot_pct": CONFIG.bottom_pct,
+                "display_scale_pct": CONFIG.display_scale
+            }
 
-    # Run relaxed tmp matcher for inspection
-    tmp_res = tmp_matcher.match_with_policy(img, preprocess_fn=None, preprocess_kwargs=pp_kwargs)
-    if tmp_res:
-        log.info("  [tmp_matcher] Best candidate id=%s name=%s dist=%s (tmp_threshold=%d)",
-                 tmp_res.get("id"), tmp_res.get("meta", {}).get("name", "unknown"), tmp_res.get("dist"), tmp_matcher.threshold)
-    else:
-        log.info("  [tmp_matcher] No candidate within tmp threshold=%d", tmp_matcher.threshold)
+            box, contour = crop.find_card_contour(frame, min_area=ctrl["min_area"])
+            vis = frame.copy()
+            if box is not None:
+                cv2.drawContours(vis, [box], -1, (0, 0, 255), 3)
 
-    # Run canonical matcher (uses pp_defaults merged with pp_kwargs)
-    res = matcher.match_with_policy(img, preprocess_fn=None, preprocess_kwargs=pp_kwargs)
-    if res is None:
-        log.warning("No candidates found for %s (canonical matcher)", img_path.name)
-        dbg = save_debug_img(img, "no_candidates", img_path.stem)
-        log.info("  Saved debug image: %s", dbg)
-        continue
+            preview = cv2.resize(vis, (0, 0), fx=ctrl["display_scale_pct"], fy=ctrl["display_scale_pct"])
+            cv2.imshow("Live", preview)
 
-    stats["matched"] += 1
-    best_dist = res.get("dist")
-    accepted = res.get("dist") <= matcher.threshold
-    if accepted:
-        stats["accepted"] += 1
-    stats["dists"].append(best_dist)
+            key = cv2.waitKey(1) & 0xFF
 
-    log.info("  Match ID: %s", res.get("id"))
-    log.info("  Name: %s", res.get("meta", {}).get("name", "unknown"))
-    log.info("  Distance: %d", best_dist)
-    log.info("  Accepted: %s (threshold=%d)", accepted, matcher.threshold)
+            if key == ord("m"):
+                controls_visible = not controls_visible
+                create_controls() if controls_visible else destroy_controls()
 
-    # Save debug image on failure to accept if configured
-    if not accepted:
-        dbg = save_debug_img(img, "failed_accept", img_path.stem)
-        log.info("  Saved debug image: %s", dbg)
+            elif key == ord("q"):
+                log.info("Quit requested")
+                break
 
-    # Save top-5 side-by-side comparisons
-    for i, (cid, dist) in enumerate(dist_list[:5]):
-        meta_path = matcher.index.get(cid, {}).get("meta", {}).get("path", "")
-        candidate_path = Path(meta_path)
-        if candidate_path.exists():
-            out = DEBUG_IMG_DIR / f"{img_path.stem}_vs_{cid[:8]}.png"
-            saved = save_side_by_side(img, candidate_path, out)
-            if saved:
-                log.info("  Saved visual compare #%d: %s (dist=%d)", i+1, saved.name, dist)
+            elif key == ord("f"):
+                cam.autofocus()
 
-# Summary
-log.info("Run complete.")
-log.info("Total images tested: %d", stats["total"])
-log.info("Images with any candidate: %d", stats["matched"])
-log.info("Images accepted (<= threshold): %d", stats["accepted"])
-if stats["dists"]:
-    import numpy as _np
-    d = _np.array(stats["dists"])
-    log.info("Distance percentiles: 50=%.1f 75=%.1f 90=%.1f 95=%.1f",
-             float(_np.percentile(d, 50)), float(_np.percentile(d, 75)),
-             float(_np.percentile(d, 90)), float(_np.percentile(d, 95)))
-log.info("Detailed logs and debug images saved to %s", LOG_DIR)
+            elif key == ord("h"):
+                print("\nControls:")
+                print("  c  - capture preview (crop, snippets, try match via Matcher)")
+                print("  s  - save current crop to debug dir")
+                print("  m  - toggle controls window (open/close)")
+                print("  q  - quit")
+                print("  f  - trigger autofocus")
+                print("  h  - show this help menu\n")
+
+            elif key == ord("c") and box is not None:
+                log.info("Capture triggered")
+                card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
+                mana_crop = crop.crop_mana_cost(card)
+                cv2.imshow("Mana Cost", cv2.resize(mana_crop, (0, 0), fx=2.0, fy=2.0))
+                if card is None or card.size == 0:
+                    log.warning("Crop failed")
+                    continue
+                log.info("Card cropped successfully: shape=%s", card.shape)
+
+                snippets = crop.extract_snippets(card, ctrl["top_pct"], ctrl["mid_start_pct"], ctrl["mid_end_pct"], ctrl["bot_pct"])
+                cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
+                for label, snip in snippets:
+                    cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
+
+                match = match_with_shudder_capture(cam, matcher, box, attempts=CONFIG.match_attempts, dist_threshold=CONFIG.phash_threshold)
+                if match:
+                    match_id, dist, card_name = match
+                    log.info("MATCH id=%s name=%s dist=%s", match_id, card_name, dist)
+                    overlay_text(card, f"{card_name} [{dist}]", org=(10, 40))
+                else:
+                    log.info("No confident match found")
+
+                cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
+
+            elif key == ord("s") and box is not None:
+                ts = int(time.time())
+                card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
+                if card is not None and card.size:
+                    p = Path(debug_dir) / f"{ts}_card.png"
+                    ok = utils.safe_imwrite(str(p), card)
+                    if ok:
+                        log.info("Saved card to %s", p)
+                    else:
+                        log.warning("Failed to save card to %s", p)
+
+    finally:
+        try:
+            capture.close_camera(cam)
+        except Exception:
+            log.debug("Error closing camera on exit", exc_info=True)
+        try:
+            destroy_controls()
+        except Exception:
+            pass
+        cv2.destroyAllWindows()
+        log.info("Inspector stopped")
+
+if __name__ == "__main__":
+    run()
