@@ -32,6 +32,7 @@ PHASH_BLUR_KSIZE = (3, 3)
 PHASH_CROP_MARGIN_PCT = 0.02
 PHASH_HIGHPASS = False
 
+MATCH_ATTEMPTS = 3
 
 # ─────────────────────────────────────────────────────────────
 # Cropping Defaults
