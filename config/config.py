@@ -31,6 +31,8 @@ CONFIG = SimpleNamespace(
     # Matching
     phash_threshold=args.phash_threshold or loader.PHASH_THRESHOLD,
     match_attempts=args.match_attempts or loader.MATCH_ATTEMPTS,
+    match_top_k=args.match_top_k or loader.MATCH_TOP_K,
+    phash_size=args.phash_size or loader.PHASH_SIZE,
 
     # Output
     save_crops=args.save_crops or loader.SAVE_CROPS_ENABLED,

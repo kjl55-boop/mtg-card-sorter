@@ -73,7 +73,7 @@ class ScryfallDBBuilder:
                 region_hashes = {}
                 for name, crop in slicer.crop_all(cv_img).items():
                     pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-                    region_hashes[name] = str(imagehash.phash(pil_crop, hash_size=CONFIG.phash_threshold))
+                    region_hashes[name] = str(imagehash.phash(pil_crop, hash_size=CONFIG.phash_size))
 
                 return {
                     "id": card_id,

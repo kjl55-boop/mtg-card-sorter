@@ -15,19 +15,15 @@ from config.config import CONFIG
 
 log = utils.get_logger("phash")
 
-DEFAULT_PHASH_SIZE = 8
-DEFAULT_TOP_K = 5
-DEFAULT_THRESHOLD = 10
-
 class Matcher:
     def __init__(self,
                  index_path: Optional[Path] = None,
                  config: Optional[Dict[str, Any]] = None):
         self.index_path = index_path or CONFIG.game_profile.index_path
         self.config = config or {}
-        self.phash_size = self.config.get("phash_size", DEFAULT_PHASH_SIZE)
-        self.top_k = self.config.get("top_k", DEFAULT_TOP_K)
-        self.threshold = self.config.get("phash_threshold", DEFAULT_THRESHOLD)
+        self.phash_size = self.config.get("phash_size", CONFIG.phash_size)
+        self.top_k = self.config.get("top_k", CONFIG.match_top_k)
+        self.threshold = self.config.get("phash_threshold", CONFIG.phash_threshold)
         self.verify_title = self.config.get("verify_title", False)
 
         log.info("Matcher initialized with phash_size=%d, top_k=%d, threshold=%d", self.phash_size, self.top_k, self.threshold)

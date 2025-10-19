@@ -24,6 +24,7 @@ DISPLAY_SCALE = 0.5  # ✅ could be a runtime flag
 # Matching / Hashing
 # ─────────────────────────────────────────────────────────────
 PHASH_THRESHOLD = 16  # ✅ could be a runtime flag
+PHASH_SIZE = 16 # control phash matrix 8x8 matrix -> || 16x16 matrix
 PHASH_HAMMING_THRESHOLD = 6
 MATCH_ATTEMPTS = 3
 MATCH_TOP_K = 12
