@@ -29,10 +29,16 @@ CONFIG = SimpleNamespace(
     autofocus_enabled=loader.AUTOFOCUS_ENABLED,
 
     # Matching
-    phash_threshold=args.phash_threshold or loader.PHASH_THRESHOLD,
-    match_attempts=args.match_attempts or loader.MATCH_ATTEMPTS,
-    match_top_k=args.match_top_k or loader.MATCH_TOP_K,
     phash_size=args.phash_size or loader.PHASH_SIZE,
+    phash_threshold=args.phash_threshold or loader.PHASH_THRESHOLD,
+    phash_top_k=args.phash_top_k or loader.PHASH_TOP_K,
+    phash_out_size = loader.PHASH_OUT_SIZE,
+    phash_clahe = loader.PHASH_CLAHE,
+    phash_blur_ksize = loader.PHASH_BLUR_KSIZE,
+    phash_crop_margin_pct = loader.PHASH_CROP_MARGIN_PCT,
+    phash_highpass = loader.PHASH_HIGHPASS,
+
+    match_attempts=args.match_attempts or loader.MATCH_ATTEMPTS,
 
     # Output
     save_crops=args.save_crops or loader.SAVE_CROPS_ENABLED,

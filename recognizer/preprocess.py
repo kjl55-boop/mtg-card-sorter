@@ -1,14 +1,16 @@
+# recognizer/preprocess.py
 """
 Pure image preprocessing utilities for pHash-based recognition.
 
 Public:
-- preprocess_for_phash(img_bgr, out_size=256, clahe=True, blur_ksize=(3,3), crop_margin_pct=0.02, highpass=False, debug=False)
+- preprocess_for_phash(img_bgr, out_size=256, clahe=True, blur_ksize=(3,3),
+  crop_margin_pct=0.02, highpass=False, debug=False)
     -> gray or PreprocessResult(final, gray, clahe, blurred, highpass)
-- simple dataclass PreprocessResult for optional traces
+- PreprocessResult dataclass for optional traces
 """
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 import cv2
 import numpy as np
 from pipeline import utils
@@ -42,9 +44,10 @@ def preprocess_for_phash(img_bgr: np.ndarray,
                          blur_ksize: Tuple[int,int] = (3,3),
                          crop_margin_pct: float = 0.02,
                          highpass: bool = False,
-                         debug: bool = False):
+                         debug: bool = False) -> Union[np.ndarray, PreprocessResult]:
     if img_bgr is None:
         raise ValueError("input image is None")
+
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     gray = _remove_margin(gray, crop_margin_pct)
     gray = cv2.resize(gray, (out_size, out_size), interpolation=cv2.INTER_AREA)
