@@ -19,6 +19,8 @@ def parse_flags():
     # Matching
     parser.add_argument("--phash-threshold", type=int, default=None, help="Max Hamming distance for phash match")
     parser.add_argument("--match-attempts", type=int, default=None, help="Number of match retries")
+    parser.add_argument("--phash_size", type=int, default=None, help="phash size must be [8, 16, 32]")
+    parser.add_argument("--match_top_k", type=int, default=None, help="must be a positive integer")
 
     # Output
     parser.add_argument("--debug-dir", type=str, default=None, help="Directory to save debug crops")
