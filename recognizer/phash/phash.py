@@ -29,17 +29,26 @@ class Matcher:
         self.top_k = self.config.get("top_k", DEFAULT_TOP_K)
         self.threshold = self.config.get("phash_threshold", DEFAULT_THRESHOLD)
         self.verify_title = self.config.get("verify_title", False)
-        self.index = self.load_index()
 
-    def load_index(path: Path) -> Dict[str, Any]:
+        log.info("Matcher initialized with phash_size=%d, top_k=%d, threshold=%d", self.phash_size, self.top_k, self.threshold)
+        log.info("Using index path: %s", self.index_path)
+
+        self.index = self.load_index()
+        if not self.index:
+            log.warning("Phash index is empty or failed to load.")
+
+
+
+    def load_index(self) -> Dict[str, Any]:
         try:
-            with open(path, "rb") as f:
+            with open(self.index_path, "rb") as f:
                 index = pickle.load(f)
-            log.info("Loaded phash index with %d entries from %s", len(index), path)
+            log.info("Loaded phash index with %d entries from %s", len(index), self.index_path)
             return index
         except Exception as e:
-            log.warning("Failed to load index from %s: %s", path, e)
+            log.warning("Failed to load index from %s: %s", self.index_path, e)
             return {}
+
 
     def compute_phash_from_gray(self, gray: np.ndarray) -> str:
         pil_img = Image.fromarray(gray)
