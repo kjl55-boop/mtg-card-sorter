@@ -107,9 +107,9 @@ class Matcher:
         return candidates[:self.top_k]
 
     def match_with_policy(self,
-                          card_bgr: np.ndarray,
-                          preprocess_fn: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-                          preprocess_kwargs: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
+                        card_bgr: np.ndarray,
+                        preprocess_fn: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+                        preprocess_kwargs: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         preprocess_kwargs = preprocess_kwargs or {}
 
         # build effective preprocess function if none provided
@@ -130,6 +130,38 @@ class Matcher:
         log.debug("Query phash: %s", qph)
 
         candidates = self.match_phash(qph)
+        if not candidates:
+            return None
+
+        best_key, best_rec, best_dist = candidates[0]
+        log.info("Best candidate: %s (dist=%d)", best_key, best_dist)
+
+        # Ensure variable always defined
+        title_dist = None
+
+        if self.verify_title:
+            try:
+                db_path = Path(best_rec.get("meta", {}).get("path", ""))
+                db_img = cv2.imread(str(db_path)) if db_path.exists() else None
+                if db_img is not None:
+                    slicer = CardSlicer()
+                    cmp = PhashComparator(hash_size=self.phash_size)
+                    query_title = slicer.crop(card_bgr, "title")
+                    db_title = slicer.crop(db_img, "title")
+                    title_dist = cmp.compare(query_title, db_title)
+            except Exception as e:
+                log.warning("Title verification failed for %s: %s", best_key, e)
+
+        return {
+            "id": best_key,
+            "meta": best_rec.get("meta", {}),
+            "dist": int(best_dist),
+            "title_dist": title_dist
+        }
+
+
+    '''
+       candidates = self.match_phash(qph)
         if not candidates:
             return None
 
@@ -156,3 +188,4 @@ class Matcher:
             "dist": int(best_dist),
             "title_dist": title_dist
         }
+        '''
