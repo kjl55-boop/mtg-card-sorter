@@ -76,6 +76,15 @@ def save_side_by_side(query_img: np.ndarray, candidate_path: Path, out_path: Pat
     cv2.imwrite(str(out_path), side)
     return out_path
 
+def save_debug_image(img: np.ndarray, tag: str, src_name: str) -> Path:
+    """Save raw query image (or crop) into diagnostics debug folder and return the path."""
+    out_dir = CONFIG.logs_dir / "diagnostics" / "debug_images"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{src_name}_{tag}.png"
+    out_path = out_dir / filename
+    cv2.imwrite(str(out_path), img)
+    return out_path
+
 # ─────────────────────────────────────────────────────────────
 # Files to process
 # ─────────────────────────────────────────────────────────────
@@ -140,9 +149,9 @@ for img_path in image_files:
     result = matcher.match_with_policy(image)
     if result is None:
         log.warning("No candidates found for %s", img_path.name)
-        # save debug crop of the query itself for later inspection
+        # save debug crop of the query itself for later inspection using local helper
         if matcher.config.get("save_debug_on_failure", True):
-            dbg_path = matcher._save_debug(image, f"no_candidates_{img_path.stem}")
+            dbg_path = save_debug_image(image, f"no_candidates", img_path.stem)
             log.info("  Saved debug image: %s", dbg_path)
         continue
 
@@ -160,8 +169,8 @@ for img_path in image_files:
     else:
         log.info("  No match within threshold (best dist: %s)", match_dist)
         if matcher.config.get("save_debug_on_failure", True):
-            dbg_path = matcher._save_debug(image, f"failed_{img_path.stem}")
-            log.info("  Saved debug crop: %s", dbg_path)
+            dbg_path = save_debug_image(image, f"failed", img_path.stem)
+            log.info("  Saved debug image: %s", dbg_path)
 
     # If there are top candidates from dist_list, save side-by-side comparisons for the top 3
     for i, (cid, dist) in enumerate(dist_list[:3]):
