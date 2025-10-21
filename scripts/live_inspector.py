@@ -251,6 +251,7 @@ def run(debug_dir: str = None):
 
                 if crop.detect_orientation(card):
                     card = cv2.rotate(card, cv2.ROTATE_180)
+                    log.info("Rotated Card 180")
 
 
                 if card is None or card.size == 0:
