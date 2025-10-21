@@ -10,7 +10,7 @@ Keys:
   f  - trigger autofocus
   h  - show help menu
 """
-
+import logging
 import time
 import cv2
 from pathlib import Path
@@ -23,12 +23,38 @@ from pipeline.camera import api as capture
 from recognizer import crop
 from recognizer.phash.phash import Matcher
 
+
+# ─────────────────────────────────────────────────────────────
+# Logging Setup
+# ─────────────────────────────────────────────────────────────
+
+CONFIG.logs_dir.mkdir(parents=True, exist_ok=True)
+timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+log_dir = CONFIG.logs_dir / "scripts"
+log_dir.mkdir(parents=True, exist_ok=True)
+log_path = log_dir / f"live_inspection_{timestamp}.log"
+
+logging.basicConfig(
+    level=CONFIG.log_level,
+    format=CONFIG.log_format,
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(log_path, mode="w")
+    ]
+)
+
+log = logging.getLogger("scripts.live_inspector")
+log.info("Logging initialized at %s", log_path)
+log.info("Using game profile: %s", CONFIG.game_profile.name)
+log.info("Phash index path: %s", CONFIG.game_profile.index_path)
+
+
 # ─────────────────────────────────────────────────────────────
 # Logging and Defaults
 # ─────────────────────────────────────────────────────────────
 
-utils.configure_logging(level=CONFIG.log_level)
-log = utils.get_logger("live_inspector")
+#utils.configure_logging(level=CONFIG.log_level)
+#log = utils.get_logger("live_inspector")
 
 DEFAULTS = {
     "pad_x_pct": CONFIG.pad_x_pct,
