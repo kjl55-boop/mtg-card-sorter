@@ -251,13 +251,18 @@ def run(debug_dir: str = None):
                 if card is None or card.size == 0:
                     log.warning("Crop failed")
                     continue
-
                 log.info("Card cropped successfully: shape=%s", card.shape)
+
+                slices = crop.slice_regions(card)
+                for label, slice in slices:
+                    if slice is not None:
+                        cv2.imshow(f"Slice - {label}", cv2.resize(slice, (0,0), fx = 0.6, fy = 0.6))
+                '''
                 snippets = crop.extract_snippets(card, ctrl["top_pct"], ctrl["mid_start_pct"], ctrl["mid_end_pct"], ctrl["bot_pct"])
                 cv2.imshow("Card", cv2.resize(card, (0, 0), fx=0.6, fy=0.6))
                 for label, snip in snippets:
                     if snip is not None:
-                        cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))
+                        cv2.imshow(f"Snippet - {label}", cv2.resize(snip, (0, 0), fx=0.6, fy=0.6))'''
 
                 match = match_with_shudder_capture(cam, matcher, box, attempts=CONFIG.match_attempts, dist_threshold=CONFIG.phash_threshold)
                 if match:
