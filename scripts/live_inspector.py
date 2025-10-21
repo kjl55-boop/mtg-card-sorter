@@ -249,7 +249,7 @@ def run(debug_dir: str = None):
                 log.info("Capture triggered")
                 card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
 
-                if crop.detect_orientation(card):
+                if not crop.detect_orientation(card):
                     card = cv2.rotate(card, cv2.ROTATE_180)
                     log.info("Rotated Card 180")
 
