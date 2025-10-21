@@ -248,6 +248,11 @@ def run(debug_dir: str = None):
             elif key == ord("c") and box is not None:
                 log.info("Capture triggered")
                 card = crop.crop_card_from_box(frame, box, pad_x_pct=ctrl["pad_x_pct"], pad_y_pct=ctrl["pad_y_pct"])
+
+                if crop.detect_orientation(card):
+                    card = cv2.rotate(card, cv2.ROTATE_180)
+
+
                 if card is None or card.size == 0:
                     log.warning("Crop failed")
                     continue
