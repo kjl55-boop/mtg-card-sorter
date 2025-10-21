@@ -1,3 +1,6 @@
+STILL WORKING ON THIS NOT DONE JUST BARELY WORKS SOMETIMES
+
+
 # look into https://github.com/pyenv/pyenv
 
 
