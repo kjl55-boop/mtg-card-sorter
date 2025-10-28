@@ -1,94 +1,83 @@
-"""
-Unified runtime config combining paths, static defaults, and CLI flags.
-Use CONFIG to access resolved values across the pipeline.
-"""
-
+# near top: keep your existing imports and loader/profile code unchanged
 from types import SimpleNamespace
-from . import paths, loader, flags
+from . import paths, loader  # keep your existing imports
 from config.game_profiles import MTG_PROFILE, POKEMON_PROFILE
-from typing import Optional
 
-# Lazy cached storage
-_ARGS = None
-_CONFIG = None
+# Build CONFIG at import time from loader defaults (no parse_flags here)
+CONFIG = SimpleNamespace(
+    data_dir=paths.DATA_DIR,
+    debug_dir=loader.DEBUG_DIR,
+    results_dir=paths.RESULTS_DIR,
+    logs_dir=paths.LOGS_DIR,
+    descriptors_dir=paths.DESCRIPTORS_DIR,
 
-def get_runtime_args(argv: Optional[list] = None):
+    log_level=loader.LOG_LEVEL,
+    log_format=loader.LOG_FORMAT,
+
+    preview_size=loader.CAMERA_PREVIEW_SIZE,
+    display_scale=loader.DISPLAY_SCALE,
+    camera_timeout=loader.CAMERA_TIMEOUT,
+    camera_warmup_sec=loader.CAMERA_WARMUP_SEC,
+    autofocus_enabled=loader.AUTOFOCUS_ENABLED,
+
+    phash_size=loader.PHASH_SIZE,
+    phash_threshold=loader.PHASH_THRESHOLD,
+    phash_top_k=loader.PHASH_TOP_K,
+    phash_out_size=loader.PHASH_OUT_SIZE,
+    phash_clahe=loader.PHASH_CLAHE,
+    phash_blur_ksize=loader.PHASH_BLUR_KSIZE,
+    phash_crop_margin_pct=loader.PHASH_CROP_MARGIN_PCT,
+    phash_highpass=loader.PHASH_HIGHPASS,
+    match_attempts=loader.MATCH_ATTEMPTS,
+
+    save_crops=loader.SAVE_CROPS_ENABLED,
+
+    min_area=loader.DEFAULT_MIN_AREA,
+    top_pct=loader.DEFAULT_TOP_PCT,
+    mid_start_pct=loader.DEFAULT_MID_START_PCT,
+    mid_end_pct=loader.DEFAULT_MID_END_PCT,
+    bottom_pct=loader.DEFAULT_BOTTOM_PCT,
+    pad_x_pct=loader.DEFAULT_PAD_X_PCT,
+    pad_y_pct=loader.DEFAULT_PAD_Y_PCT,
+
+    normalized_size=loader.NORMALIZED_SIZE,
+
+    game_profile=MTG_PROFILE
+)
+
+
+def apply_flag_overrides(args):
     """
-    Lazily parse CLI flags on first request and cache the result.
-    Call this only from guarded entrypoints or when you actually need runtime args.
+    Apply non-None parsed CLI args into CONFIG in-place.
+    Call this once early in the process after parse_flags().
     """
-    global _ARGS
-    if _ARGS is None:
-        # import inside function to avoid parse at module import time
-        from config.flags import parse_flags
-        _ARGS = parse_flags(argv)
-    return _ARGS
+    if not args:
+        return
 
-def _build_config_from_args(args):
-    """
-    Build and return a SimpleNamespace CONFIG using the provided args (Namespace).
-    This function mirrors your previous top-level CONFIG construction but does not run
-    at import time.
-    """
-    return SimpleNamespace(
-        # Paths
-        data_dir=paths.DATA_DIR,
-        debug_dir=(args.debug_dir or loader.DEBUG_DIR),
-        results_dir=paths.RESULTS_DIR,
-        logs_dir=paths.LOGS_DIR,
-        descriptors_dir=paths.DESCRIPTORS_DIR,
+    # Logging
+    if getattr(args, "log_level", None) is not None:
+        CONFIG.log_level = args.log_level
 
-        # Logging
-        log_level=(args.log_level or loader.LOG_LEVEL),
-        log_format=loader.LOG_FORMAT,
+    # Camera
+    if getattr(args, "preview_width", None) and getattr(args, "preview_height", None):
+        CONFIG.preview_size = (args.preview_width, args.preview_height)
+    if getattr(args, "display_scale", None) is not None:
+        CONFIG.display_scale = args.display_scale
 
-        # Camera
-        preview_size=( (args.preview_width, args.preview_height)
-                       if getattr(args, "preview_width", None) and getattr(args, "preview_height", None)
-                       else loader.CAMERA_PREVIEW_SIZE),
-        display_scale=(args.display_scale or loader.DISPLAY_SCALE),
-        camera_timeout=loader.CAMERA_TIMEOUT,
-        camera_warmup_sec=loader.CAMERA_WARMUP_SEC,
-        autofocus_enabled=loader.AUTOFOCUS_ENABLED,
+    # Matching
+    if getattr(args, "phash_size", None) is not None:
+        CONFIG.phash_size = args.phash_size
+    if getattr(args, "phash_threshold", None) is not None:
+        CONFIG.phash_threshold = args.phash_threshold
+    if getattr(args, "phash_top_k", None) is not None:
+        CONFIG.phash_top_k = args.phash_top_k
+    if getattr(args, "match_attempts", None) is not None:
+        CONFIG.match_attempts = args.match_attempts
 
-        # Matching
-        phash_size=(args.phash_size or loader.PHASH_SIZE),
-        phash_threshold=(args.phash_threshold or loader.PHASH_THRESHOLD),
-        phash_top_k=(args.phash_top_k or loader.PHASH_TOP_K),
-        phash_out_size = loader.PHASH_OUT_SIZE,
-        phash_clahe = loader.PHASH_CLAHE,
-        phash_blur_ksize = loader.PHASH_BLUR_KSIZE,
-        phash_crop_margin_pct = loader.PHASH_CROP_MARGIN_PCT,
-        phash_highpass = loader.PHASH_HIGHPASS,
+    # Output
+    if getattr(args, "debug_dir", None) is not None:
+        CONFIG.debug_dir = args.debug_dir
+    if getattr(args, "save_crops", None) is not None:
+        CONFIG.save_crops = bool(args.save_crops)
 
-        match_attempts=(args.match_attempts or loader.MATCH_ATTEMPTS),
-
-        # Output
-        save_crops=(args.save_crops or loader.SAVE_CROPS_ENABLED),
-
-        # Crop defaults
-        min_area=loader.DEFAULT_MIN_AREA,
-        top_pct=loader.DEFAULT_TOP_PCT,
-        mid_start_pct=loader.DEFAULT_MID_START_PCT,
-        mid_end_pct=loader.DEFAULT_MID_END_PCT,
-        bottom_pct=loader.DEFAULT_BOTTOM_PCT,
-        pad_x_pct=loader.DEFAULT_PAD_X_PCT,
-        pad_y_pct=loader.DEFAULT_PAD_Y_PCT,
-
-        # Normalization
-        normalized_size=loader.NORMALIZED_SIZE,
-
-        # Card Profile
-        game_profile=MTG_PROFILE
-    )
-
-def get_config(argv: Optional[list] = None):
-    """
-    Return a cached CONFIG (SimpleNamespace). Builds it on first access using
-    get_runtime_args(argv) so flags are applied lazily and only when needed.
-    """
-    global _CONFIG
-    if _CONFIG is None:
-        args = get_runtime_args(argv)
-        _CONFIG = _build_config_from_args(args)
-    return _CONFIG
+    # add any additional fields you rely on similarly...
