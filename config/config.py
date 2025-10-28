@@ -7,14 +7,14 @@ from types import SimpleNamespace
 from . import paths, loader, flags
 from config.game_profiles import MTG_PROFILE, POKEMON_PROFILE
 
+
 def get_runtime_args(argv=None):
     from config.flags import parse_flags
     return parse_flags(argv)
 
+args = get_runtime_args()
 
 CONFIG = SimpleNamespace(
-    args = get_runtime_args()
-    
     # Paths
     data_dir=paths.DATA_DIR,
     debug_dir=args.debug_dir or loader.DEBUG_DIR,
