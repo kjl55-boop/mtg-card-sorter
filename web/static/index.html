@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>MTG Card Sorter — Live UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 12px; }
+    #controls { margin-bottom: 8px; }
+    button { margin-right: 6px; padding: 8px 12px; }
+    #preview { border: 1px solid #ccc; width: 420px; height: 300px; object-fit: contain; }
+    #captures { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .card { width: 160px; border:1px solid #ddd; padding:6px; }
+    .card img { width: 100%; height: auto; display:block; }
+    .meta { font-size:12px; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <h2>MTG Card Sorter — Live UI</h2>
+
+  <div id="controls">
+    <button id="btn-capture">Capture & Match</button>
+    <button id="btn-refresh">Refresh Captures</button>
+    <label><input id="auto-refresh" type="checkbox"> Auto-refresh</label>
+  </div>
+
+  <div>
+    <img id="preview" src="/preview" alt="preview (MJPEG stream)">
+  </div>
+
+  <h3>Recent captures</h3>
+  <div id="captures">Loading...</div>
+
+  <script>
+    const capturesEl = document.getElementById("captures");
+    const btnCapture = document.getElementById("btn-capture");
+    const btnRefresh = document.getElementById("btn-refresh");
+    const autoRefresh = document.getElementById("auto-refresh");
+
+    async function fetchCaptures() {
+      capturesEl.innerHTML = "Loading...";
+      const res = await fetch("/captures?limit=40");
+      const data = await res.json();
+      if (!data.ok) {
+        capturesEl.innerHTML = "Failed to load";
+        return;
+      }
+      const rows = data.captures || [];
+      if (rows.length === 0) {
+        capturesEl.innerHTML = "<i>No captures yet</i>";
+        return;
+      }
+      capturesEl.innerHTML = "";
+      for (const r of rows) {
+        const div = document.createElement("div");
+        div.className = "card";
+        const parts = (r.thumb_path || "").split("/");
+        const thumbFile = parts[parts.length - 1];
+        const img = document.createElement("img");
+        img.src = `/image/${r.id}/${thumbFile}`;
+        div.appendChild(img);
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        let title = (r.best_candidate_id || "unknown");
+        meta.innerHTML = `<b>${title}</b><br>dist: ${r.best_distance || '—'}<br><small>${r.ts_iso}</small>`;
+        div.appendChild(meta);
+
+        // accept/reject buttons
+        const btnAccept = document.createElement("button");
+        btnAccept.textContent = "Accept";
+        btnAccept.onclick = async () => {
+          await fetch(`/captures/${r.id}/accept`, { method: "POST", headers: {'content-type':'application/json'}, body: JSON.stringify({accepted:true, note:'ui accept'})});
+          fetchCaptures();
+        };
+        const btnReject = document.createElement("button");
+        btnReject.textContent = "Reject";
+        btnReject.onclick = async () => {
+          await fetch(`/captures/${r.id}/accept`, { method: "POST", headers: {'content-type':'application/json'}, body: JSON.stringify({accepted:false, note:'ui reject'})});
+          fetchCaptures();
+        };
+        div.appendChild(btnAccept);
+        div.appendChild(btnReject);
+
+        capturesEl.appendChild(div);
+      }
+    }
+
+    btnCapture.onclick = async () => {
+      btnCapture.disabled = true;
+      btnCapture.textContent = "Capturing...";
+      try {
+        const res = await fetch("/capture", { method: "POST" });
+        const data = await res.json();
+        if (data.ok) {
+          await fetchCaptures();
+        } else {
+          alert("No capture or no candidate: " + (data.reason || "unknown"));
+        }
+      } catch (e) {
+        alert("Capture error: " + e);
+      } finally {
+        btnCapture.disabled = false;
+        btnCapture.textContent = "Capture & Match";
+      }
+    };
+
+    btnRefresh.onclick = fetchCaptures;
+    setInterval(() => { if (autoRefresh.checked) fetchCaptures(); }, 3000);
+
+    // initial load
+    fetchCaptures();
+  </script>
+</body>
+</html>

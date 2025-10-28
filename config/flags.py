@@ -4,8 +4,9 @@ Use this in scripts like run_inspector.py to allow dynamic tuning.
 """
 
 import argparse
+from typing import List, Optional
 
-def parse_flags():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Runtime flags for MTG card inspector")
 
     # Logging
@@ -26,4 +27,13 @@ def parse_flags():
     parser.add_argument("--debug-dir", type=str, default=None, help="Directory to save debug crops")
     parser.add_argument("--save-crops", action="store_true", help="Enable saving cropped card images")
 
-    return parser.parse_args()
+    return parser
+
+def parse_flags(argv: Optional[List[str]] = None):
+    """
+    Parse CLI flags. argv can be provided for tests or interior calls; if None,
+    uses sys.argv as argparse normally does.
+    """
+    parser = build_parser()
+    return parser.parse_args(argv)
+
