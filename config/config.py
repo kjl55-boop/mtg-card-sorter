@@ -6,11 +6,15 @@ Use CONFIG to access resolved values across the pipeline.
 from types import SimpleNamespace
 from . import paths, loader, flags
 from config.game_profiles import MTG_PROFILE, POKEMON_PROFILE
-from config.flags import parse_flags
 
-args = parse_flags()
+def get_runtime_args(argv=None):
+    from config.flags import parse_flags
+    return parse_flags(argv)
+
 
 CONFIG = SimpleNamespace(
+    args = get_runtime_args()
+    
     # Paths
     data_dir=paths.DATA_DIR,
     debug_dir=args.debug_dir or loader.DEBUG_DIR,
@@ -59,3 +63,5 @@ CONFIG = SimpleNamespace(
     #Card Profile
     game_profile=MTG_PROFILE 
 )
+
+
